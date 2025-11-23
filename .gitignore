@@ -33,3 +33,5 @@ bld/
 
 # Artifacts
 artifacts/
+.claude/
+.temp/
