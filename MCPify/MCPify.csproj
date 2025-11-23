@@ -8,11 +8,11 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MCPify</PackageId>
-    <Version>1.0.0-preview.1</Version>
-    <Authors>MCPify Contributors</Authors>
+    <Version>0.0.1</Version>
+    <Authors>Abdullah D.</Authors>
     <Description>A NuGet package that dynamically loads OpenAPI/Swagger specifications and exposes API operations as MCP server tools</Description>
     <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
-    <RepositoryUrl>https://github.com/yourusername/MCPify</RepositoryUrl>
+    <RepositoryUrl>https://github.com/abdebek/MCPify</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
