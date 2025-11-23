@@ -8,7 +8,7 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MCPify</PackageId>
-    <Version>0.0.1-preview</Version>
+    <Version>0.0.2-preview</Version>
     <Authors>Abdullah D.</Authors>
     <Description>A NuGet package that dynamically loads OpenAPI/Swagger specifications and exposes API operations as MCP server tools</Description>
     <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
