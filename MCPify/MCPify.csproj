@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>MCPify</PackageId>
+    <Version>1.0.0-preview.1</Version>
+    <Authors>MCPify Contributors</Authors>
+    <Description>A NuGet package that dynamically loads OpenAPI/Swagger specifications and exposes API operations as MCP server tools</Description>
+    <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
+    <RepositoryUrl>https://github.com/yourusername/MCPify</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <StaticWebAssetBasePath></StaticWebAssetBasePath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <GenerateStaticWebAssets>false</GenerateStaticWebAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="*-*" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="*-*" />
+    <PackageReference Include="Microsoft.OpenApi.Readers" Version="*" />
+  </ItemGroup>
+
+</Project>
