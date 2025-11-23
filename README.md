@@ -27,16 +27,29 @@ builder.Services.AddMcpify(
     apiBaseUrl: "https://petstore.swagger.io/v2",
     options =>
     {
-        options.ToolPrefix = "pet_";
+        options.ToolPrefix = "petstore_";
         // options.Filter = op => op.Route.Contains("/pet");
     });
 
 var app = builder.Build();
 
-app.MapMcpifyEndpoint("/mcp");
+app.MapMcpifyEndpoint();
 
 app.Run();
 ```
+
+### Running the Sample
+
+A complete sample application is included in the `Sample/` directory:
+
+```bash
+cd Sample
+dotnet run
+```
+
+Then connect your MCP client to `http://localhost:5000/sse`
+
+See [Sample/README.md](Sample/README.md) for more details.
 
 ## Configuration Options
 

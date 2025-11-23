@@ -31,7 +31,6 @@ internal class McpifyInitializer : IMcpifyInitializer
         var provider = _serviceProvider.GetRequiredService<IOpenApiProvider>();
         var schema = _serviceProvider.GetRequiredService<IJsonSchemaGenerator>();
         var httpClient = _serviceProvider.GetRequiredService<HttpClient>();
-        var primitives = _serviceProvider.GetRequiredService<McpServerPrimitiveCollection<McpServerTool>>();
 
         var document = provider.LoadAsync(_swaggerUrl).GetAwaiter().GetResult();
         var operations = provider.GetOperations(document);
@@ -39,6 +38,16 @@ internal class McpifyInitializer : IMcpifyInitializer
         if (_options.Filter != null)
         {
             operations = operations.Where(_options.Filter);
+        }
+
+        // Try to get the tools collection, it may or may not be registered
+        var primitives = _serviceProvider.GetService<McpServerPrimitiveCollection<McpServerTool>>();
+
+        if (primitives == null)
+        {
+            // If not registered, we need to register tools directly in the service collection
+            // This is handled in the service registration phase
+            return;
         }
 
         foreach (var operation in operations)
