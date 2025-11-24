@@ -14,17 +14,20 @@ public class OpenApiProxyTool : McpServerTool
     private readonly IJsonSchemaGenerator _schema;
     private readonly string _apiBaseUrl;
     private readonly OpenApiOperationDescriptor _descriptor;
+    private readonly McpifyOptions _options;
 
     public OpenApiProxyTool(
         OpenApiOperationDescriptor descriptor,
         string apiBaseUrl,
         HttpClient http,
-        IJsonSchemaGenerator schema)
+        IJsonSchemaGenerator schema,
+        McpifyOptions options)
     {
         _descriptor = descriptor;
         _apiBaseUrl = apiBaseUrl.TrimEnd('/');
         _http = http;
         _schema = schema;
+        _options = options;
     }
 
     public override Tool ProtocolTool => new()
@@ -74,6 +77,7 @@ public class OpenApiProxyTool : McpServerTool
         var route = _descriptor.Route;
         var queryParams = new List<string>();
         object? bodyContent = null;
+        var headers = new Dictionary<string, string>();
 
         if (arguments != null)
         {
@@ -101,6 +105,10 @@ public class OpenApiProxyTool : McpServerTool
                         break;
 
                     case ParameterLocation.Header:
+                        if (!string.IsNullOrEmpty(stringValue))
+                        {
+                            headers[param.Name] = stringValue;
+                        }
                         break;
                 }
             }
@@ -123,6 +131,16 @@ public class OpenApiProxyTool : McpServerTool
         {
             var jsonBody = JsonSerializer.Serialize(bodyContent);
             request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+        }
+
+        foreach (var header in _options.DefaultHeaders)
+        {
+            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        foreach (var header in headers)
+        {
+            request.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
 
         return request;

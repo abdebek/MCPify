@@ -2,13 +2,21 @@ using MCPify.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure MCPify with the Petstore API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddMcpify(
     swaggerUrl: "https://petstore.swagger.io/v2/swagger.json",
     apiBaseUrl: "https://petstore.swagger.io/v2",
     options =>
     {
-        // Add a prefix to all tool names
         options.ToolPrefix = "petstore_";
 
         // Optional: Filter operations to only include pet-related endpoints
@@ -17,9 +25,16 @@ builder.Services.AddMcpify(
 
 var app = builder.Build();
 
-// Map the MCP endpoint (default path is empty string, which creates /sse and /messages endpoints)
+app.UseCors("AllowAll");
+
+using (var scope = app.Services.CreateScope())
+{
+    var initializer = scope.ServiceProvider.GetRequiredService<IMcpifyInitializer>();
+    await initializer.InitializeAsync();
+}
+
 app.MapMcpifyEndpoint();
 
-app.MapGet("/status", () => "MCPify Sample - MCP Server is running! Connect via /sse or /messages endpoints.");
+app.MapGet("/status", () => "MCPify Sample - MCP Server is running! Connect via /sse endpoint.");
 
 app.Run();

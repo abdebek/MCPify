@@ -12,4 +12,6 @@ public class McpifyOptions
     public IOpenApiProvider? ProviderOverride { get; set; }
 
     public IJsonSchemaGenerator? SchemaGeneratorOverride { get; set; }
+
+    public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 }

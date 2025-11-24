@@ -35,3 +35,7 @@ bld/
 artifacts/
 .claude/
 .temp/
+
+
+# IDEs
+.vscode/

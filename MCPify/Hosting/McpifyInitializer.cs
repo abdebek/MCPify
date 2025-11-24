@@ -26,28 +26,25 @@ internal class McpifyInitializer : IMcpifyInitializer
         _options = options;
     }
 
-    public void Initialize()
+    public async Task InitializeAsync()
     {
         var provider = _serviceProvider.GetRequiredService<IOpenApiProvider>();
         var schema = _serviceProvider.GetRequiredService<IJsonSchemaGenerator>();
         var httpClient = _serviceProvider.GetRequiredService<HttpClient>();
 
-        var document = provider.LoadAsync(_swaggerUrl).GetAwaiter().GetResult();
+        var primitives = _serviceProvider.GetService<McpServerPrimitiveCollection<McpServerTool>>();
+
+        if (primitives == null)
+        {
+            return;
+        }
+
+        var document = await provider.LoadAsync(_swaggerUrl);
         var operations = provider.GetOperations(document);
 
         if (_options.Filter != null)
         {
             operations = operations.Where(_options.Filter);
-        }
-
-        // Try to get the tools collection, it may or may not be registered
-        var primitives = _serviceProvider.GetService<McpServerPrimitiveCollection<McpServerTool>>();
-
-        if (primitives == null)
-        {
-            // If not registered, we need to register tools directly in the service collection
-            // This is handled in the service registration phase
-            return;
         }
 
         foreach (var operation in operations)
@@ -57,7 +54,7 @@ internal class McpifyInitializer : IMcpifyInitializer
                 : _options.ToolPrefix + operation.Name;
 
             var descriptor = operation with { Name = toolName };
-            var tool = new OpenApiProxyTool(descriptor, _apiBaseUrl, httpClient, schema);
+            var tool = new OpenApiProxyTool(descriptor, _apiBaseUrl, httpClient, schema, _options);
 
             primitives.Add(tool);
         }
