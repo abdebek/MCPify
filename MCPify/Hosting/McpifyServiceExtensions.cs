@@ -1,9 +1,12 @@
 using MCPify.Core;
+using MCPify.Endpoints;
 using MCPify.OpenApi;
 using MCPify.Schema;
 using MCPify.Tools;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Server;
+using System.Net.Http;
 
 namespace MCPify.Hosting;
 
@@ -11,14 +14,14 @@ public static class McpifyServiceExtensions
 {
     public static IServiceCollection AddMcpify(
         this IServiceCollection services,
-        string swaggerUrl,
-        string apiBaseUrl,
-        Action<McpifyOptions>? configure = null)
+        Action<McpifyOptions> configure)
     {
         var opts = new McpifyOptions();
-        configure?.Invoke(opts);
+        configure(opts);
 
         services.AddSingleton(opts);
+
+        services.AddSingleton<McpServerPrimitiveCollection<McpServerTool>>();
 
         services.AddMcpServer()
             .WithHttpTransport();
@@ -31,51 +34,110 @@ public static class McpifyServiceExtensions
         services.AddSingleton<IJsonSchemaGenerator>(_ =>
             opts.SchemaGeneratorOverride ?? new DefaultJsonSchemaGenerator());
 
-        // Eagerly load the Swagger spec and register tools into DI
-        try 
+        services.AddSingleton<IEndpointMetadataProvider, AspNetCoreEndpointMetadataProvider>();
+
+        // Register external API tools
+        if (opts.ExternalApis.Count > 0)
         {
             var provider = opts.ProviderOverride ?? new OpenApiV3Provider();
-            var document = provider.LoadAsync(swaggerUrl).GetAwaiter().GetResult();
-            var operations = provider.GetOperations(document);
+            var schema = opts.SchemaGeneratorOverride ?? new DefaultJsonSchemaGenerator();
 
-            if (opts.Filter != null)
+            foreach (var externalApi in opts.ExternalApis)
             {
-                operations = operations.Where(opts.Filter);
+                RegisterExternalApiTools(services, externalApi, opts, schema, provider);
             }
-
-            foreach (var operation in operations)
-            {
-                var toolName = string.IsNullOrEmpty(opts.ToolPrefix)
-                    ? operation.Name
-                    : opts.ToolPrefix + operation.Name;
-
-                var descriptor = operation with { Name = toolName };
-
-                // Register the tool instance
-                services.AddSingleton<McpServerTool>(sp =>
-                {
-                    var httpClient = sp.GetRequiredService<HttpClient>();
-                    var schema = sp.GetRequiredService<IJsonSchemaGenerator>();
-                    var options = sp.GetRequiredService<McpifyOptions>();
-                    return new OpenApiProxyTool(descriptor, apiBaseUrl, httpClient, schema, options);
-                });
-            }
-
-            Console.WriteLine($"[MCPify] Successfully registered {operations.Count()} tools from Swagger.");
         }
-        catch (Exception ex)
+
+        if (opts.LocalEndpoints?.Enabled == true)
         {
-            // Log failure but allow application to start (with 0 dynamic tools)
-            Console.WriteLine($"[MCPify] WARNING: Failed to load OpenAPI spec from {swaggerUrl}. Dynamic tools will be unavailable.");
-            Console.WriteLine($"[MCPify] Error: {ex.Message}");
+            services.AddSingleton(new LocalEndpointToolRegistration(opts.LocalEndpoints));
+            services.AddHostedService<McpifyInitializer>();
         }
 
         return services;
+    }
+
+    public static IServiceCollection AddMcpify(
+        this IServiceCollection services,
+        string swaggerUrl,
+        string apiBaseUrl,
+        Action<McpifyOptions>? configure = null)
+    {
+        return services.AddMcpify(options =>
+        {
+            configure?.Invoke(options);
+
+            options.ExternalApis.Add(new ExternalApiOptions
+            {
+                SwaggerUrl = swaggerUrl,
+                ApiBaseUrl = apiBaseUrl,
+                ToolPrefix = options.ExternalApis.Count == 0 ? null : $"api{options.ExternalApis.Count}_",
+            });
+        });
     }
 
     public static IServiceCollection AddMcpifyTestTool(this IServiceCollection services)
     {
         services.AddSingleton<McpServerTool, SimpleMathTool>();
         return services;
+    }
+
+    private static void RegisterExternalApiTools(
+        IServiceCollection services,
+        ExternalApiOptions apiOptions,
+        McpifyOptions globalOptions,
+        IJsonSchemaGenerator schema,
+        IOpenApiProvider provider)
+    {
+        var source = apiOptions.SwaggerFilePath ?? apiOptions.SwaggerUrl;
+        if (string.IsNullOrEmpty(source))
+        {
+            Console.WriteLine("[MCPify] WARNING: ExternalApiOptions requires either SwaggerUrl or SwaggerFilePath");
+            return;
+        }
+
+        try
+        {
+            var document = provider.LoadAsync(source).GetAwaiter().GetResult();
+            var operations = provider.GetOperations(document);
+
+            if (apiOptions.Filter != null)
+            {
+                operations = operations.Where(apiOptions.Filter);
+            }
+
+            var httpClient = new HttpClient(); // Create a new instance during registration
+
+            foreach (var operation in operations)
+            {
+                var toolName = string.IsNullOrEmpty(apiOptions.ToolPrefix)
+                    ? operation.Name
+                    : apiOptions.ToolPrefix + operation.Name;
+
+                var descriptor = operation with { Name = toolName };
+
+                var apiOpts = new McpifyOptions
+                {
+                    DefaultHeaders = new Dictionary<string, string>(globalOptions.DefaultHeaders)
+                };
+
+                foreach (var header in apiOptions.DefaultHeaders)
+                {
+                    apiOpts.DefaultHeaders[header.Key] = header.Value;
+                }
+
+                var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, schema, apiOpts);
+
+                // Register as singleton service - this is the correct pattern
+                services.AddSingleton<McpServerTool>(tool);
+            }
+
+            Console.WriteLine($"[MCPify] Successfully registered {operations.Count()} tools from {source}.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[MCPify] WARNING: Failed to load OpenAPI spec from {source}.");
+            Console.WriteLine($"[MCPify] Error: {ex.Message}");
+        }
     }
 }

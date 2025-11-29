@@ -14,16 +14,30 @@ builder.Services.AddCors(options =>
     });
 });
 
-// Register the test tool just to see our mcp server is working
 builder.Services.AddMcpifyTestTool();
 
-builder.Services.AddMcpify(
-    swaggerUrl: "https://petstore.swagger.io/v2/swagger.json",
-    apiBaseUrl: "https://petstore.swagger.io/v2",
-    options =>
+builder.Services.AddMcpify(options =>
+{
+    options.LocalEndpoints = new()
     {
-        options.ToolPrefix = "petstore_";
+        Enabled = true,
+        ToolPrefix = "local_"
+    };
+
+    options.ExternalApis.Add(new()
+    {
+        SwaggerUrl = "https://petstore.swagger.io/v2/swagger.json",
+        ApiBaseUrl = "https://petstore.swagger.io/v2",
+        ToolPrefix = "petstore_"
     });
+
+    options.ExternalApis.Add(new()
+    {
+        SwaggerFilePath = "sample-api.json",
+        ApiBaseUrl = "http://localhost:5000",
+        ToolPrefix = "file_"
+    });
+});
 
 var app = builder.Build();
 
@@ -45,7 +59,12 @@ app.Use(async (context, next) =>
 
 app.UseCors("AllowAll");
 
-app.MapMcpifyEndpoint();
+app.MapGet("/api/users/{id}", (int id) => new { Id = id, Name = $"User {id}" });
+app.MapPost("/api/users", (UserRequest user) => new { Id = 123, user.Name, user.Email });
 app.MapGet("/status", () => "MCPify Sample is Running");
 
+app.MapMcpifyEndpoint();
+
 app.Run();
+
+public record UserRequest(string Name, string Email);

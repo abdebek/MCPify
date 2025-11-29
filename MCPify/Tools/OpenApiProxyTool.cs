@@ -12,7 +12,7 @@ public class OpenApiProxyTool : McpServerTool
 {
     private readonly HttpClient _http;
     private readonly IJsonSchemaGenerator _schema;
-    private readonly string _apiBaseUrl;
+    private readonly Func<string> _apiBaseUrlProvider;
     private readonly OpenApiOperationDescriptor _descriptor;
     private readonly McpifyOptions _options;
 
@@ -22,9 +22,19 @@ public class OpenApiProxyTool : McpServerTool
         HttpClient http,
         IJsonSchemaGenerator schema,
         McpifyOptions options)
+        : this(descriptor, () => apiBaseUrl, http, schema, options)
+    {
+    }
+
+    public OpenApiProxyTool(
+        OpenApiOperationDescriptor descriptor,
+        Func<string> apiBaseUrlProvider,
+        HttpClient http,
+        IJsonSchemaGenerator schema,
+        McpifyOptions options)
     {
         _descriptor = descriptor;
-        _apiBaseUrl = apiBaseUrl.TrimEnd('/');
+        _apiBaseUrlProvider = apiBaseUrlProvider;
         _http = http;
         _schema = schema;
         _options = options;
@@ -119,7 +129,8 @@ public class OpenApiProxyTool : McpServerTool
             }
         }
 
-        var url = _apiBaseUrl + route;
+        var baseUrl = _apiBaseUrlProvider().TrimEnd('/');
+        var url = baseUrl + route;
         if (queryParams.Count > 0)
         {
             url += "?" + string.Join("&", queryParams);
