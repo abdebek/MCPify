@@ -28,6 +28,23 @@ public static class McpifyServiceExtensions
 
         services.AddHttpClient();
 
+        // Ensure the shared tool collection is used by McpServerOptions
+        services.AddOptions<McpServerOptions>()
+            .PostConfigure<McpServerPrimitiveCollection<McpServerTool>>((options, sharedCollection) =>
+            {
+                // If the default setup created a collection with static tools, copy them to our shared collection
+                if (options.ToolCollection != null && !ReferenceEquals(options.ToolCollection, sharedCollection))
+                {
+                    foreach (var tool in options.ToolCollection)
+                    {
+                        sharedCollection.Add(tool);
+                    }
+                }
+
+                // Set the options to use our shared collection instance
+                options.ToolCollection = sharedCollection;
+            });
+
         services.AddSingleton<IOpenApiProvider>(_ =>
             opts.ProviderOverride ?? new OpenApiV3Provider());
 
