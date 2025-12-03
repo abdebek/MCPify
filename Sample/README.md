@@ -184,14 +184,15 @@ You can configure the transport and other settings in `appsettings.json` or via 
 ```json
 {
   "Mcpify": {
-    "Transport": "Stdio" // or "Http"
+    "Transport": "Stdio", // or "Http"
+    "OpenApiDownloadTimeout": "00:00:45" // 45 seconds (default is 30s)
   }
 }
 ```
 
 **Command Line:**
 ```bash
-dotnet run --Mcpify:Transport=Http
+dotnet run --Mcpify:Transport=Http --Mcpify:OpenApiDownloadTimeout=00:00:45
 ```
 
 ## Features
@@ -199,6 +200,11 @@ dotnet run --Mcpify:Transport=Http
 - **OpenAPI Bridge:** Automatically converts Swagger/OpenAPI definitions (e.g., Petstore) into MCP Tools.
 - **Local Endpoint Bridge:** Automatically exposes your ASP.NET Core Minimal APIs as MCP Tools.
 - **Transport Agnostic:** Switch between Stdio and HTTP with a simple config change.
+- **Authentication (JWT Bearer)**: The sample includes a JWT Bearer authentication setup.
+  - A secure endpoint `/api/secure` is protected using `.RequireAuthorization()`.
+  - At startup, a demo JWT token is generated and printed to the console.
+  - **MCPify is configured to use this demo token** for all local endpoints by setting `options.LocalEndpoints.Authentication = new BearerAuthentication(demoToken);`.
+  - This means AI agents calling local tools will be automatically authenticated.
 
 ## Troubleshooting
 

@@ -114,6 +114,7 @@ Proxy external services by providing their OpenAPI spec.
 - `SwaggerUrl`: URL to the `swagger.json`.
 - `ApiBaseUrl`: The base URL where API requests should be sent.
 - `DefaultHeaders`: Custom headers (e.g., Authorization) to include in requests.
+- `OpenApiDownloadTimeout`: Configurable timeout for downloading OpenAPI specifications. Defaults to 30 seconds.
 
 ### Authentication
 
@@ -135,6 +136,19 @@ options.ExternalApis.Add(new()
 // - BearerAuthentication(token)
 // - BasicAuthentication(username, password)
 ```
+
+## 🧪 Tests
+
+To run the unit tests, navigate to the project root and execute the following command:
+
+```bash
+dotnet test Tests/MCPify.Tests/MCPify.Tests.csproj
+```
+
+The test suite covers:
+- Core authentication providers (`ApiKeyAuthentication`, `BearerAuthentication`, `BasicAuthentication`).
+- Integration of authentication with the `OpenApiProxyTool`.
+- Basic functionality of the `OpenApiProxyTool` (e.g., URL construction).
 
 ## 🤝 Contributing
 
