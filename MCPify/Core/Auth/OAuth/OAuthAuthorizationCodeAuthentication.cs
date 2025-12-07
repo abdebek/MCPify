@@ -21,6 +21,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly string _callbackPath;
     private readonly string? _redirectUri;
     private readonly string _callbackHost;
+    private readonly Action<string>? _openBrowserAction;
 
     public OAuthAuthorizationCodeAuthentication(
         string clientId,
@@ -32,7 +33,8 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         HttpClient? httpClient = null,
         string callbackPath = "/callback",
         string? redirectUri = null,
-        string callbackHost = "localhost")
+        string callbackHost = "localhost",
+        Action<string>? openBrowserAction = null)
     {
         _clientId = clientId;
         _authorizationEndpoint = authorizationEndpoint;
@@ -44,6 +46,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _callbackPath = callbackPath;
         _redirectUri = redirectUri;
         _callbackHost = callbackHost;
+        _openBrowserAction = openBrowserAction;
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
@@ -104,7 +107,15 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         query["state"] = state;
         
         var authUrl = $"{_authorizationEndpoint}?{query}";
-        OpenBrowser(authUrl);
+        
+        if (_openBrowserAction != null)
+        {
+            _openBrowserAction(authUrl);
+        }
+        else
+        {
+            OpenBrowser(authUrl);
+        }
 
         try
         {
