@@ -194,7 +194,8 @@ app.MapPost("/mock-auth/token", ([FromForm] string code) =>
         expires_in = 3600,
         refresh_token = "mock_refresh_token"
     });
-});
+})
+.DisableAntiforgery();
 // -----------------------------
 
 app.MapGet("/api/users/{id}", (int id) => new { Id = id, Name = $"User {id}" });

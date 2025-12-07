@@ -2,6 +2,11 @@
 
 This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints and OpenAPI (Swagger) specifications as tools for the **Model Context Protocol (MCP)**.
 
+What this sample includes:
+- Minimal API endpoints exposed as MCP tools.
+- A tiny in-app OAuth/OIDC provider (authorize/token/device code) for demonstrating auth flows end to end.
+- A generated `mock-api.json` OpenAPI document to showcase external API bridging (written on startup; ignored by git).
+
 It supports two modes of operation:
 1. **Stdio:** For local integration with clients like **Claude Desktop**.
 2. **HTTP (SSE):** For remote access or multi-client scenarios.
@@ -210,3 +215,4 @@ dotnet run --Mcpify:Transport=Http --Mcpify:OpenApiDownloadTimeout=00:00:45
 
 - **Stdio Issues:** If connecting via Stdio fails, ensure no other output is being written to the console. The application automatically disables logging in Stdio mode to prevent this, but ensure no `Console.WriteLine` calls exist in your own startup code.
 - **Logs:** In Stdio mode, standard logs are suppressed. You can configure file-based logging if debugging is needed.
+- **Generated files:** The sample writes a `mock-api.json` (OpenAPI document) and `demo_token.json` (token cache) to disk; both are ignored by git and can be safely deleted between runs.

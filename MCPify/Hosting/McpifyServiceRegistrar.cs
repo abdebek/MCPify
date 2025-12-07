@@ -94,6 +94,12 @@ public class McpifyServiceRegistrar
                         ? operation.Name
                         : apiOptions.ToolPrefix + operation.Name;
 
+                    if (toolCollection.Any(t => t.ProtocolTool.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _logger.LogDebug("[MCPify] Skipping duplicate external tool registration for {ToolName}.", toolName);
+                        continue;
+                    }
+
                     var descriptor = operation with { Name = toolName };
 
                     var apiOpts = new McpifyOptions
@@ -154,6 +160,12 @@ public class McpifyServiceRegistrar
             var toolName = string.IsNullOrEmpty(_options.LocalEndpoints.ToolPrefix)
                 ? operation.Name
                 : _options.LocalEndpoints.ToolPrefix + operation.Name;
+
+            if (toolCollection.Any(t => t.ProtocolTool.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogDebug("[MCPify] Skipping duplicate local tool registration for {ToolName}.", toolName);
+                continue;
+            }
 
             var descriptor = operation with { Name = toolName };
 

@@ -2,7 +2,7 @@
 
 **MCPify** is a library that bridges the gap between ASP.NET Core APIs and the **Model Context Protocol (MCP)**. It allows you to effortlessly expose your existing REST endpoints (OpenAPI/Swagger) and internal Minimal APIs as MCP Tools, making them accessible to AI agents like Claude Desktop, Cursor, and others.
 
-## 🚀 Features
+## Features
 
 - **OpenAPI Bridge:** Automatically converts any Swagger/OpenAPI specification (JSON/YAML) into MCP Tools.
 - **Local Endpoint Bridge:** Automatically discovers and exposes your application's ASP.NET Core Minimal APIs as MCP Tools.
@@ -14,7 +14,7 @@
   - **OAuth 2.0 Device Code Flow:** Headless login for remote/containerized servers.
   - **Standard Auth:** API Key, Bearer Token, Basic Auth.
 
-## 📦 Installation
+## Installation
 
 Install the package via NuGet:
 
@@ -22,7 +22,7 @@ Install the package via NuGet:
 dotnet add package MCPify
 ```
 
-## 🏁 Quick Start
+## Quick Start
 
 ### 1. Setup in Program.cs
 
@@ -105,7 +105,7 @@ To use your app as a local tool in Claude Desktop:
 
 3.  **Restart Claude.** Your API endpoints will now appear as tools (e.g., `local_api_users_get`)!
 
-## 📚 Configuration
+## Configuration
 
 ### Transport Modes
 
@@ -178,23 +178,24 @@ new BearerAuthentication("access-token")
 new BasicAuthentication("username", "password")
 ```
 
-## 🧪 Tests
+## Tests
 
-To run the unit tests, navigate to the project root and execute the following command:
+Tests are fully integration-based (no mocks). They spin up in-memory HTTP/OIDC servers to verify:
+- Auth code + device code flows (including ID token validation via JWKS).
+- Proxy tool path/constraint handling and header forwarding.
+- Core authentication providers.
+
+Run them from the repo root:
 
 ```bash
 dotnet test Tests/MCPify.Tests/MCPify.Tests.csproj
 ```
 
-The test suite covers:
-- Core authentication providers (`ApiKeyAuthentication`, `BearerAuthentication`, `BasicAuthentication`).
-- Integration of authentication with the `OpenApiProxyTool`.
-- Basic functionality of the `OpenApiProxyTool` (e.g., URL construction).
-
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License.
+

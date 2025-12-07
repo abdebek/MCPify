@@ -6,6 +6,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace MCPify.Tools;
 
@@ -118,7 +119,7 @@ public class OpenApiProxyTool : McpServerTool
                 switch (param.In)
                 {
                     case ParameterLocation.Path:
-                        route = route.Replace($"{{{param.Name}}}", Uri.EscapeDataString(stringValue ?? ""));
+                        route = ReplaceRouteParameter(route, param.Name, Uri.EscapeDataString(stringValue ?? ""));
                         break;
 
                     case ParameterLocation.Query:
@@ -166,5 +167,18 @@ public class OpenApiProxyTool : McpServerTool
         }
 
         return request;
+    }
+
+    private static string ReplaceRouteParameter(string route, string paramName, string value)
+    {
+        route = route.Replace($"{{{paramName}}}", value, StringComparison.OrdinalIgnoreCase);
+
+        var constrainedPattern = new Regex(@"\{" + Regex.Escape(paramName) + @":[^}]+\}", RegexOptions.IgnoreCase);
+        if (constrainedPattern.IsMatch(route))
+        {
+            route = constrainedPattern.Replace(route, value);
+        }
+
+        return route;
     }
 }

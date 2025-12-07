@@ -50,7 +50,9 @@ public class AspNetCoreEndpointMetadataProvider : IEndpointMetadataProvider
         }
 
         var method = httpMethods.First();
-        var route = "/" + routeEndpoint.RoutePattern.RawText?.TrimStart('/');
+        var rawRoute = routeEndpoint.RoutePattern.RawText ?? string.Empty;
+        var cleanedRoute = Regex.Replace(rawRoute, @"\{([^}:]+):[^}]+\}", "{$1}");
+        var route = "/" + cleanedRoute.TrimStart('/');
 
         var httpMethod = method.ToUpperInvariant() switch
         {

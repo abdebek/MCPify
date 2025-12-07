@@ -36,7 +36,14 @@ artifacts/
 .claude/
 .temp/
 
-
 # IDEs
 .vscode/
 input.json
+
+# Sample/runtime artifacts
+mock-api.json
+Sample/mock-api.json
+Sample/demo_token.json
+Sample/oauth_error.log
+*.log
+demo_token.json

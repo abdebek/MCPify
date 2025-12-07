@@ -172,14 +172,20 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> ExchangeCodeForTokenAsync(string code, string redirectUri, CancellationToken cancellationToken)
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             { "grant_type", "authorization_code" },
             { "client_id", _clientId },
             { "code", code },
-            { "redirect_uri", redirectUri },
-            { "client_secret", _clientSecret ?? "" }
-        });
+            { "redirect_uri", redirectUri }
+        };
+
+        if (!string.IsNullOrEmpty(_clientSecret))
+        {
+            form["client_secret"] = _clientSecret;
+        }
+
+        var content = new FormUrlEncodedContent(form);
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -202,13 +208,19 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
-        var content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             { "grant_type", "refresh_token" },
             { "client_id", _clientId },
-            { "refresh_token", refreshToken },
-            { "client_secret", _clientSecret ?? "" }
-        });
+            { "refresh_token", refreshToken }
+        };
+
+        if (!string.IsNullOrEmpty(_clientSecret))
+        {
+            form["client_secret"] = _clientSecret;
+        }
+
+        var content = new FormUrlEncodedContent(form);
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();

@@ -1,45 +1,35 @@
+using System.IdentityModel.Tokens.Jwt;
+using System.Net;
+using System.Net.Http;
+using System.Security.Claims;
+using System.Text.Json;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.IdentityModel.Tokens;
 using MCPify.Core.Auth.DeviceCode;
 using MCPify.Core.Auth.OAuth;
-using Moq;
 
 namespace MCPify.Tests.Integration;
 
-public class OAuthE2ETests : IClassFixture<MockOAuthProvider>
+public class OAuthE2ETests : IAsyncLifetime
 {
-    private readonly MockOAuthProvider _provider;
+    private readonly TestOAuthServer _provider = new();
 
-    public OAuthE2ETests()
-    {
-        _provider = new MockOAuthProvider();
-    }
+    public async Task InitializeAsync() => await _provider.StartAsync();
+
+    public async Task DisposeAsync() => await _provider.DisposeAsync();
 
     [Fact]
     public async Task AuthorizationCodeFlow_EndToEnd()
     {
-        // 1. Start the Mock Provider
-        await _provider.StartAsync();
-
-        // 2. Setup Client
         var tokenStore = new InMemoryTokenStore();
-        var httpClient = new HttpClient();
 
-        // This simulates the user's browser hitting the URL that the authenticator "opened"
-        Action<string> openBrowserSimulation = (url) =>
+        Action<string> openBrowserSimulation = url =>
         {
-            // Run in background to simulate browser separate process
             Task.Run(async () =>
             {
-                // Give the listener a moment to start
-                await Task.Delay(500);
-
-                // The URL is the Provider's /authorize endpoint.
-                // In a real browser, this would redirect back to localhost.
-                // We manually follow that redirect logic here or just hit the authorize endpoint
-
-                // Fetch the Authorize URL -> Provider Redirects to -> Localhost Callback
+                await Task.Delay(200);
                 var handler = new HttpClientHandler { AllowAutoRedirect = true };
                 var browserClient = new HttpClient(handler);
-
                 await browserClient.GetAsync(url);
             });
         };
@@ -50,50 +40,32 @@ public class OAuthE2ETests : IClassFixture<MockOAuthProvider>
             _provider.TokenEndpoint,
             "scope",
             tokenStore,
-            null,
-            httpClient,
+            httpClient: _provider.CreateClient(),
             openBrowserAction: openBrowserSimulation
         );
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
-        // 3. Act - Trigger Auth
-        // This will: Start Listener -> Call OpenBrowser -> Browser hits Provider -> Provider redirects -> Listener gets code -> Swaps for token
         await auth.ApplyAsync(request);
 
-        // 4. Assert
         Assert.NotNull(request.Headers.Authorization);
-        Assert.Equal("Bearer", request.Headers.Authorization.Scheme);
-        Assert.Equal("access_token_auth_code", request.Headers.Authorization.Parameter);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.False(string.IsNullOrEmpty(request.Headers.Authorization.Parameter));
 
-        // Verify token was stored
         var stored = await tokenStore.GetTokenAsync();
         Assert.NotNull(stored);
-        Assert.Equal("access_token_auth_code", stored.AccessToken);
+        Assert.Equal(request.Headers.Authorization.Parameter, stored!.AccessToken);
     }
 
     [Fact]
     public async Task DeviceCodeFlow_EndToEnd()
     {
-        // 1. Start Mock Provider
-        await _provider.StartAsync();
-
-        // 2. Setup Client
         var tokenStore = new InMemoryTokenStore();
-        var httpClient = new HttpClient();
 
-        // Simulate user action: When prompted, they "click the link" (authorize on provider)
-        Func<string, string, Task> userPrompt = async (uri, code) =>
+        Func<string, string, Task> userPrompt = (uri, code) =>
         {
-            // Verify correct code passed
-            Assert.Equal("UC-1234", code);
-
-            // Simulate user authorizing on the provider side
-            // In reality, user visits `uri` and types `code`.
-            // Here, we just tell our Mock Provider to flip the "Authorized" bit.
             _provider.AuthorizeDevice();
-
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         };
 
         var auth = new DeviceCodeAuthentication(
@@ -103,17 +75,70 @@ public class OAuthE2ETests : IClassFixture<MockOAuthProvider>
             "scope",
             tokenStore,
             userPrompt,
-            httpClient
+            _provider.CreateClient()
         );
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
-        // 3. Act
         await auth.ApplyAsync(request);
 
-        // 4. Assert
         Assert.NotNull(request.Headers.Authorization);
-        Assert.Equal("Bearer", request.Headers.Authorization.Scheme);
-        Assert.Equal("access_token_device_flow", request.Headers.Authorization.Parameter);
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.False(string.IsNullOrEmpty(request.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task OpenIdConnect_Metadata_And_IdToken_Validation()
+    {
+        var client = _provider.CreateClient();
+
+        var config = JsonDocument.Parse(await client.GetStringAsync($"{_provider.BaseUrl}/.well-known/openid-configuration")).RootElement;
+        Assert.Equal(_provider.AuthorizationEndpoint, config.GetProperty("authorization_endpoint").GetString());
+        Assert.Equal(_provider.TokenEndpoint, config.GetProperty("token_endpoint").GetString());
+        Assert.Equal(_provider.JwksEndpoint, config.GetProperty("jwks_uri").GetString());
+
+        var redirectUri = "http://localhost/callback";
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        var browser = new HttpClient(handler);
+        var authResponse = await browser.GetAsync($"{_provider.AuthorizationEndpoint}?response_type=code&client_id=client_id&redirect_uri={WebUtility.UrlEncode(redirectUri)}&state=xyz&scope=openid%20profile");
+        Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
+
+        var location = authResponse.Headers.Location!;
+        var query = QueryHelpers.ParseQuery(location.Query);
+        var code = query["code"].ToString();
+        Assert.Equal("xyz", query["state"].ToString());
+        Assert.False(string.IsNullOrEmpty(code));
+
+        var tokenResponse = await client.PostAsync(_provider.TokenEndpoint, new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            { "grant_type", "authorization_code" },
+            { "code", code },
+            { "redirect_uri", redirectUri },
+            { "client_id", "client_id" }
+        }));
+        tokenResponse.EnsureSuccessStatusCode();
+
+        var json = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync()).RootElement;
+        var idToken = json.GetProperty("id_token").GetString();
+        Assert.False(string.IsNullOrEmpty(idToken));
+
+        var handlerJwt = new JwtSecurityTokenHandler();
+        handlerJwt.InboundClaimTypeMap.Clear();
+        var principal = handlerJwt.ValidateToken(idToken!, new TokenValidationParameters
+        {
+            ValidIssuer = _provider.Issuer,
+            ValidAudience = _provider.Audience,
+            IssuerSigningKey = _provider.SigningKey,
+            ValidateLifetime = true,
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateIssuerSigningKey = true
+        }, out _);
+
+        var subject = principal.FindFirst(JwtRegisteredClaimNames.Sub)?.Value
+                      ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                      ?? principal.FindFirst(ClaimTypes.Name)?.Value;
+
+        Assert.Equal("test-user", subject);
     }
 }
