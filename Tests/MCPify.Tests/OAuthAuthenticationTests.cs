@@ -28,7 +28,7 @@ public class OAuthAuthenticationTests
             .ReturnsAsync(token);
 
         var auth = new OAuthAuthorizationCodeAuthentication(
-            "client_id", "http://auth", "http://token", "scope", _mockStore.Object, null, _httpClient);
+            "client_id", "http://auth", "http://token", "scope", _mockStore.Object, null, _httpClient, "/callback");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -59,7 +59,7 @@ public class OAuthAuthenticationTests
             }));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
-            "client_id", "http://auth", "http://token", "scope", _mockStore.Object, null, _httpClient);
+            "client_id", "http://auth", "http://token", "scope", _mockStore.Object, null, _httpClient, "/callback");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 

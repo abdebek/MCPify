@@ -18,6 +18,9 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly string _scope;
     private readonly ITokenStore _tokenStore;
     private readonly HttpClient _httpClient;
+    private readonly string _callbackPath;
+    private readonly string? _redirectUri;
+    private readonly string _callbackHost;
 
     public OAuthAuthorizationCodeAuthentication(
         string clientId,
@@ -26,7 +29,10 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         string scope,
         ITokenStore tokenStore,
         string? clientSecret = null,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        string callbackPath = "/callback",
+        string? redirectUri = null,
+        string callbackHost = "localhost")
     {
         _clientId = clientId;
         _authorizationEndpoint = authorizationEndpoint;
@@ -35,6 +41,9 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _tokenStore = tokenStore;
         _clientSecret = clientSecret;
         _httpClient = httpClient ?? new HttpClient();
+        _callbackPath = callbackPath;
+        _redirectUri = redirectUri;
+        _callbackHost = callbackHost;
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
@@ -70,11 +79,19 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> PerformLoginAsync(CancellationToken cancellationToken)
     {
-        var port = GetRandomUnusedPort();
-        var redirectUri = $"http://localhost:{port}/callback";
+        string redirectUri;
+        if (!string.IsNullOrEmpty(_redirectUri))
+        {
+            redirectUri = _redirectUri;
+        }
+        else
+        {
+            var port = GetRandomUnusedPort();
+            redirectUri = $"http://{_callbackHost}:{port}{_callbackPath}";
+        }
 
         using var listener = new HttpListener();
-        listener.Prefixes.Add(redirectUri + "/");
+        listener.Prefixes.Add(redirectUri.EndsWith("/") ? redirectUri : redirectUri + "/");
         listener.Start();
 
         var state = Guid.NewGuid().ToString();
