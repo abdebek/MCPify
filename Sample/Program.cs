@@ -93,6 +93,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddAntiforgery();
 builder.Services.AddMcpifyTestTool();
 
 builder.Services.AddMcpify(options =>
@@ -103,7 +104,10 @@ builder.Services.AddMcpify(options =>
     options.LocalEndpoints = new()
     {
         Enabled = true,
-        ToolPrefix = "local_"
+        ToolPrefix = "local_",
+        Filter = (descriptor) => 
+            !descriptor.Route.StartsWith("/mock-auth") && 
+            !descriptor.Route.StartsWith("/mock-api")
     };
 
     // 2. Mock Secure API (Demonstrates OAuth2 Flow)
@@ -129,6 +133,7 @@ var app = builder.Build();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAntiforgery();
 
 // --- Mock API Endpoints ---
 app.MapGet("/mock-api/secrets", (ClaimsPrincipal user) => 
@@ -164,7 +169,8 @@ app.MapPost("/mock-auth/approve", ([FromForm] string redirect_uri, [FromForm] st
 {
     var code = "mock_auth_code_" + Guid.NewGuid();
     return Results.Redirect($"{redirect_uri}?code={code}&state={state}");
-});
+})
+.DisableAntiforgery();
 
 // 3. Token: Exchanges code for JWT
 app.MapPost("/mock-auth/token", ([FromForm] string code) =>
