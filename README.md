@@ -129,6 +129,11 @@ Proxy external services by providing their OpenAPI spec.
 - `DefaultHeaders`: Custom headers (e.g., Authorization) to include in requests.
 - `OpenApiDownloadTimeout`: Configurable timeout for downloading OpenAPI specifications. Defaults to 30 seconds.
 
+#### OpenAPI support
+- Built-in provider uses `Microsoft.OpenApi.Readers` and supports Swagger 2.0 and OpenAPI 3.x documents.
+- Invalid/unsupported specs are skipped with a warning in logs.
+- To use another parser or source, set `options.ProviderOverride` to your own `IOpenApiProvider` implementation (and optionally `options.SchemaGeneratorOverride` for custom JSON schemas).
+
 ### Authentication
 
 Secure your external or local endpoints using built-in authentication providers.
