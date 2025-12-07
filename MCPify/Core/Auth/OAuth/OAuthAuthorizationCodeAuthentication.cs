@@ -82,75 +82,83 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> PerformLoginAsync(CancellationToken cancellationToken)
     {
-        string redirectUri;
-        if (!string.IsNullOrEmpty(_redirectUri))
-        {
-            redirectUri = _redirectUri;
-        }
-        else
-        {
-            var port = GetRandomUnusedPort();
-            redirectUri = $"http://{_callbackHost}:{port}{_callbackPath}";
-        }
-
-        using var listener = new HttpListener();
-        listener.Prefixes.Add(redirectUri.EndsWith("/") ? redirectUri : redirectUri + "/");
-        listener.Start();
-
-        var state = Guid.NewGuid().ToString();
-
-        var query = HttpUtility.ParseQueryString("");
-        query["response_type"] = "code";
-        query["client_id"] = _clientId;
-        query["redirect_uri"] = redirectUri;
-        query["scope"] = _scope;
-        query["state"] = state;
-        
-        var authUrl = $"{_authorizationEndpoint}?{query}";
-        
-        if (_openBrowserAction != null)
-        {
-            _openBrowserAction(authUrl);
-        }
-        else
-        {
-            OpenBrowser(authUrl);
-        }
-
         try
         {
-            var contextTask = listener.GetContextAsync();
-            // Simple cancellation support
-            using var reg = cancellationToken.Register(() => listener.Stop());
-            
-            var context = await contextTask;
-            
-            var req = context.Request;
-            var res = context.Response;
-
-            var returnedState = req.QueryString["state"];
-            var code = req.QueryString["code"];
-            var error = req.QueryString["error"];
-
-            if (!string.IsNullOrEmpty(error))
+            string redirectUri;
+            if (!string.IsNullOrEmpty(_redirectUri))
             {
-                await SendResponseAsync(res, $"<html><body><h1>Login Failed</h1><p>{WebUtility.HtmlEncode(error)}</p></body></html>", cancellationToken);
-                throw new Exception($"OAuth Error: {error}");
+                redirectUri = _redirectUri;
+            }
+            else
+            {
+                var port = GetRandomUnusedPort();
+                redirectUri = $"http://{_callbackHost}:{port}{_callbackPath}";
             }
 
-            if (returnedState != state || string.IsNullOrEmpty(code))
+            using var listener = new HttpListener();
+            listener.Prefixes.Add(redirectUri.EndsWith("/") ? redirectUri : redirectUri + "/");
+            listener.Start();
+
+            var state = Guid.NewGuid().ToString();
+
+            var query = HttpUtility.ParseQueryString("");
+            query["response_type"] = "code";
+            query["client_id"] = _clientId;
+            query["redirect_uri"] = redirectUri;
+            query["scope"] = _scope;
+            query["state"] = state;
+            
+            var authUrl = $"{_authorizationEndpoint}?{query}";
+            
+            if (_openBrowserAction != null)
             {
-                await SendResponseAsync(res, "<html><body><h1>Login Failed</h1><p>Invalid state or missing code.</p></body></html>", cancellationToken);
-                throw new Exception("Invalid state or missing code.");
+                _openBrowserAction(authUrl);
+            }
+            else
+            {
+                OpenBrowser(authUrl);
             }
 
-            await SendResponseAsync(res, "<html><body><h1>Login Successful</h1><p>You can close this window and return to the application.</p><script>window.close();</script></body></html>", cancellationToken);
+            try
+            {
+                var contextTask = listener.GetContextAsync();
+                // Simple cancellation support
+                using var reg = cancellationToken.Register(() => listener.Stop());
+                
+                var context = await contextTask;
+                
+                var req = context.Request;
+                var res = context.Response;
 
-            return await ExchangeCodeForTokenAsync(code, redirectUri, cancellationToken);
+                var returnedState = req.QueryString["state"];
+                var code = req.QueryString["code"];
+                var error = req.QueryString["error"];
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    await SendResponseAsync(res, $"<html><body><h1>Login Failed</h1><p>{WebUtility.HtmlEncode(error)}</p></body></html>", cancellationToken);
+                    throw new Exception($"OAuth Error: {error}");
+                }
+
+                if (returnedState != state || string.IsNullOrEmpty(code))
+                {
+                    await SendResponseAsync(res, "<html><body><h1>Login Failed</h1><p>Invalid state or missing code.</p></body></html>", cancellationToken);
+                    throw new Exception("Invalid state or missing code.");
+                }
+
+                await SendResponseAsync(res, "<html><body><h1>Login Successful</h1><p>You can close this window and return to the application.</p><script>window.close();</script></body></html>", cancellationToken);
+
+                return await ExchangeCodeForTokenAsync(code, redirectUri, cancellationToken);
+            }
+            catch (HttpListenerException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new TaskCanceledException();
+            }
         }
-        catch (HttpListenerException) when (cancellationToken.IsCancellationRequested)
+        catch (Exception ex)
         {
-            throw new TaskCanceledException();
+            File.AppendAllText("oauth_error.log", $"{DateTime.Now}: {ex}\n");
+            throw;
         }
     }
 
