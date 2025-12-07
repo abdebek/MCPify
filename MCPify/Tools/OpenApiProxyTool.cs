@@ -60,6 +60,12 @@ public class OpenApiProxyTool : McpServerTool
     {
         var arguments = context.Params?.Arguments;
         var request = BuildHttpRequest(arguments);
+
+        if (_authentication != null)
+        {
+            await _authentication.ApplyAsync(request, token);
+        }
+
         var response = await _http.SendAsync(request, token);
 
         var content = await response.Content.ReadAsStringAsync(token);
@@ -158,8 +164,6 @@ public class OpenApiProxyTool : McpServerTool
         {
             request.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
-
-        _authentication?.Apply(request);
 
         return request;
     }

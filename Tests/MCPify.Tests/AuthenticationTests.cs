@@ -5,14 +5,14 @@ namespace MCPify.Tests;
 public class AuthenticationTests
 {
     [Fact]
-    public void ApiKeyAuthentication_Header_AppliesCorrectly()
+    public async Task ApiKeyAuthentication_Header_AppliesCorrectly()
     {
         // Arrange
         var auth = new ApiKeyAuthentication("X-API-Key", "secret-value", ApiKeyLocation.Header);
         var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
 
         // Act
-        auth.Apply(request);
+        await auth.ApplyAsync(request);
 
         // Assert
         Assert.True(request.Headers.Contains("X-API-Key"));
@@ -20,28 +20,28 @@ public class AuthenticationTests
     }
 
     [Fact]
-    public void ApiKeyAuthentication_Query_AppliesCorrectly()
+    public async Task ApiKeyAuthentication_Query_AppliesCorrectly()
     {
         // Arrange
         var auth = new ApiKeyAuthentication("api_key", "12345", ApiKeyLocation.Query);
         var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com/api/resource");
 
         // Act
-        auth.Apply(request);
+        await auth.ApplyAsync(request);
 
         // Assert
         Assert.Equal("http://example.com/api/resource?api_key=12345", request.RequestUri?.ToString());
     }
 
     [Fact]
-    public void ApiKeyAuthentication_Query_AppendsToExistingQuery()
+    public async Task ApiKeyAuthentication_Query_AppendsToExistingQuery()
     {
         // Arrange
         var auth = new ApiKeyAuthentication("key", "val", ApiKeyLocation.Query);
         var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com/api?foo=bar");
 
         // Act
-        auth.Apply(request);
+        await auth.ApplyAsync(request);
 
         // Assert
         var uri = request.RequestUri?.ToString();
@@ -50,7 +50,7 @@ public class AuthenticationTests
     }
 
     [Fact]
-    public void BearerAuthentication_AppliesCorrectly()
+    public async Task BearerAuthentication_AppliesCorrectly()
     {
         // Arrange
         var token = "xyz-token";
@@ -58,7 +58,7 @@ public class AuthenticationTests
         var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
 
         // Act
-        auth.Apply(request);
+        await auth.ApplyAsync(request);
 
         // Assert
         Assert.NotNull(request.Headers.Authorization);
@@ -67,7 +67,7 @@ public class AuthenticationTests
     }
 
     [Fact]
-    public void BasicAuthentication_AppliesCorrectly()
+    public async Task BasicAuthentication_AppliesCorrectly()
     {
         // Arrange
         var username = "user";
@@ -76,7 +76,7 @@ public class AuthenticationTests
         var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
 
         // Act
-        auth.Apply(request);
+        await auth.ApplyAsync(request);
 
         // Assert
         Assert.NotNull(request.Headers.Authorization);

@@ -64,7 +64,7 @@ public class OpenApiProxyToolTests
         }, CancellationToken.None);
 
         // Assert
-        authMock.Verify(a => a.Apply(It.IsAny<HttpRequestMessage>()), Times.Once);
+        authMock.Verify(a => a.ApplyAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
