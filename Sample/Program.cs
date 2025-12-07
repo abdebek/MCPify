@@ -74,6 +74,14 @@ builder.Services.AddMcpify(options =>
             !descriptor.Route.StartsWith("/mock-api")
     };
 
+    // 2. Public Petstore API (remote OpenAPI demo)
+    options.ExternalApis.Add(new()
+    {
+        SwaggerUrl = "https://petstore3.swagger.io/api/v3/openapi.json",
+        ApiBaseUrl = "https://petstore3.swagger.io/api/v3",
+        ToolPrefix = "petstore_"
+    });
+
     // 2. Mock Secure API (Demonstrates OAuth2 Flow) - opt-in
     if (enableOAuthDemo)
     {

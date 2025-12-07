@@ -4,6 +4,7 @@ This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints 
 
 What this sample includes:
 - Minimal API endpoints exposed as MCP tools.
+- A live remote OpenAPI demo: Petstore (`https://petstore3.swagger.io/api/v3/openapi.json`) registered as `petstore_*` tools to show external swagger support.
 - An optional in-app OAuth/OIDC provider (authorize/token/device code) for demonstrating auth flows end to end (opt-in).
 - A generated `mock-api.json` OpenAPI document to showcase external API bridging when OAuth demo is enabled (ignored by git).
 
