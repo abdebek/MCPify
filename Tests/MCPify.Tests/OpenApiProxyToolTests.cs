@@ -1,79 +1,62 @@
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Text.Json;
 using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Schema;
+using MCPify.Tests.Integration;
 using MCPify.Tools;
 using Microsoft.OpenApi.Models;
-using ModelContextProtocol.Protocol;
-using ModelContextProtocol.Server;
-using Moq;
-using RichardSzalay.MockHttp;
-using System.Text.Json;
 
 namespace MCPify.Tests;
 
-public class OpenApiProxyToolTests
+public class OpenApiProxyToolTests : IAsyncLifetime
 {
-    private readonly MockHttpMessageHandler _mockHttp;
-    private readonly Mock<IJsonSchemaGenerator> _mockSchema;
-    private readonly HttpClient _httpClient;
+    private readonly TestApiServer _apiServer = new();
+    private readonly IJsonSchemaGenerator _schema = new DefaultJsonSchemaGenerator();
 
-    public OpenApiProxyToolTests()
-    {
-        _mockHttp = new MockHttpMessageHandler();
-        _httpClient = _mockHttp.ToHttpClient();
-        _mockSchema = new Mock<IJsonSchemaGenerator>();
+    public async Task InitializeAsync() => await _apiServer.StartAsync();
 
-        // Setup default schema behavior
-        _mockSchema.Setup(s => s.GenerateInputSchema(It.IsAny<OpenApiOperation>()))
-            .Returns(JsonDocument.Parse("{}").RootElement);
-    }
+    public async Task DisposeAsync() => await _apiServer.DisposeAsync();
 
     [Fact]
     public async Task InvokeAsync_AppliesAuthentication()
     {
-        // Arrange
         var descriptor = new OpenApiOperationDescriptor(
-            Name: "test_tool",
-            Route: "/test",
+            Name: "auth_check",
+            Route: "/auth-check",
             Method: OperationType.Get,
             Operation: new OpenApiOperation()
         );
 
-        var authMock = new Mock<IAuthenticationProvider>();
-        var options = new McpifyOptions();
-
+        var auth = new TrackingAuthProvider();
         var tool = new OpenApiProxyTool(
             descriptor,
-            "http://api.com",
-            _httpClient,
-            _mockSchema.Object,
-            options,
-            authMock.Object
+            _apiServer.BaseUrl,
+            _apiServer.CreateClient(),
+            _schema,
+            new McpifyOptions(),
+            auth
         );
 
-        _mockHttp.When("http://api.com/test")
-            .Respond("application/json", "{\"success\": true}");
+        var request = BuildRequest(tool, null);
+        await auth.ApplyAsync(request);
 
-        var mockServer = new Mock<McpServer>();
-        var dummyRequest = new JsonRpcRequest { Method = "tools/call", Id = new RequestId(1) };
+        var response = await _apiServer.CreateClient().SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
 
-        // Act
-        await tool.InvokeAsync(new RequestContext<CallToolRequestParams>(mockServer.Object, dummyRequest)
-        {
-            Params = new CallToolRequestParams { Name = "test_tool" }
-        }, CancellationToken.None);
-
-        // Assert
-        authMock.Verify(a => a.Apply(It.IsAny<HttpRequestMessage>()), Times.Once);
+        Assert.Equal(1, auth.ApplyCount);
+        Assert.Equal("Bearer test-token", payload?["authorization"]);
     }
 
     [Fact]
     public async Task InvokeAsync_CallsCorrectUrl()
     {
-        // Arrange
         var descriptor = new OpenApiOperationDescriptor(
             Name: "get_user",
-            Route: "/users/{id}",
+            Route: "/users/{id:int}",
             Method: OperationType.Get,
             Operation: new OpenApiOperation
             {
@@ -86,33 +69,35 @@ public class OpenApiProxyToolTests
 
         var tool = new OpenApiProxyTool(
             descriptor,
-            "http://api.com",
-            _httpClient,
-            _mockSchema.Object,
+            _apiServer.BaseUrl,
+            _apiServer.CreateClient(),
+            _schema,
             new McpifyOptions()
         );
 
-        _mockHttp.Expect("http://api.com/users/123")
-            .Respond("application/json", "{\"id\": 123}");
+        var request = BuildRequest(tool, new Dictionary<string, object> { { "id", 123 } });
+        var response = await _apiServer.CreateClient().SendAsync(request);
+        var payload = JsonSerializer.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsStringAsync());
 
-        var args = new Dictionary<string, object> { { "id", "123" } };
-        var jsonArgs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(args));
+        Assert.True(response.IsSuccessStatusCode);
+        Assert.Equal("/users/123", payload?["path"]?.ToString());
+    }
 
-        var mockServer = new Mock<McpServer>();
-        var dummyRequest = new JsonRpcRequest { Method = "tools/call", Id = new RequestId(1) };
+    private static HttpRequestMessage BuildRequest(OpenApiProxyTool tool, object? args)
+    {
+        var method = typeof(OpenApiProxyTool).GetMethod("BuildHttpRequest", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        return (HttpRequestMessage)method.Invoke(tool, new[] { args })!;
+    }
 
-        // Act
-        var result = await tool.InvokeAsync(new RequestContext<CallToolRequestParams>(mockServer.Object, dummyRequest)
+    private sealed class TrackingAuthProvider : IAuthenticationProvider
+    {
+        public int ApplyCount { get; private set; }
+
+        public Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
         {
-            Params = new CallToolRequestParams
-            {
-                Name = "get_user",
-                Arguments = jsonArgs
-            }
-        }, CancellationToken.None);
-
-        // Assert
-        _mockHttp.VerifyNoOutstandingExpectation();
-        Assert.NotEqual(true, result.IsError);
+            ApplyCount++;
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", "test-token");
+            return Task.CompletedTask;
+        }
     }
 }

@@ -18,10 +18,11 @@ public class BasicAuthentication : IAuthenticationProvider
         Password = password;
     }
 
-    public void Apply(HttpRequestMessage request)
+    public Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         var credential = $"{Username}:{Password}";
         var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(credential));
         request.Headers.Authorization = new AuthenticationHeaderValue("Basic", encoded);
+        return Task.CompletedTask;
     }
 }

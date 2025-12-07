@@ -2,5 +2,5 @@ namespace MCPify.Core.Auth;
 
 public interface IAuthenticationProvider
 {
-    void Apply(HttpRequestMessage request);
+    Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default);
 }

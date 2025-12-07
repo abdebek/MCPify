@@ -24,7 +24,7 @@ public class ApiKeyAuthentication : IAuthenticationProvider
         Location = location;
     }
 
-    public void Apply(HttpRequestMessage request)
+    public Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         if (Location == ApiKeyLocation.Header)
         {
@@ -38,5 +38,7 @@ public class ApiKeyAuthentication : IAuthenticationProvider
             uriBuilder.Query = query.ToString();
             request.RequestUri = uriBuilder.Uri;
         }
+
+        return Task.CompletedTask;
     }
 }

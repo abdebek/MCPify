@@ -73,6 +73,12 @@ public static class McpifyEndpointExtensions
                                 ? operation.Name
                                 : options.LocalEndpoints.ToolPrefix + operation.Name;
 
+                            if (toolCollection.Any(t => t.ProtocolTool.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                logger.LogDebug("[MCPify] Skipping duplicate local tool registration for {ToolName}.", toolName);
+                                continue;
+                            }
+
                             var descriptor = operation with { Name = toolName };
 
                             var localOpts = new McpifyOptions

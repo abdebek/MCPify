@@ -12,8 +12,9 @@ public class BearerAuthentication : IAuthenticationProvider
         Token = token;
     }
 
-    public void Apply(HttpRequestMessage request)
+    public Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
+        return Task.CompletedTask;
     }
 }
