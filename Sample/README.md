@@ -4,8 +4,8 @@ This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints 
 
 What this sample includes:
 - Minimal API endpoints exposed as MCP tools.
-- A tiny in-app OAuth/OIDC provider (authorize/token/device code) for demonstrating auth flows end to end.
-- A generated `mock-api.json` OpenAPI document to showcase external API bridging (written on startup; ignored by git).
+- An optional in-app OAuth/OIDC provider (authorize/token/device code) for demonstrating auth flows end to end (opt-in).
+- A generated `mock-api.json` OpenAPI document to showcase external API bridging when OAuth demo is enabled (ignored by git).
 
 It supports two modes of operation:
 1. **Stdio:** For local integration with clients like **Claude Desktop**.
@@ -28,7 +28,7 @@ The default configuration uses `Stdio` transport, which is designed for local to
    ```
 
 2. **Configure Claude Desktop:**
-   Locate your config file (e.g., `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) and add/update the `mcpServers` entry:
+   Locate your config file (e.g., `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) and add/update the `mcpServers` entry (replace `<abs-path-to-repo>` with your path):
 
    ```json
    {
@@ -36,7 +36,7 @@ The default configuration uses `Stdio` transport, which is designed for local to
        "mcpify-sample": {
          "command": "dotnet",
          "args": [
-           "D:/C/repos/MCPify/Sample/bin/Release/net9.0/publish/MCPify.Sample.dll"
+           "<abs-path-to-repo>/Sample/bin/Release/net9.0/publish/MCPify.Sample.dll"
          ]
        }
      }
@@ -75,6 +75,11 @@ To run the server in HTTP mode (using Server-Sent Events):
      }
    }
    ```
+
+### Choose your demo level
+
+- **Simplest (local endpoints only):** Run `dotnet run` (or published binary) with default settings. This exposes minimal APIs as tools and skips the OAuth demo.
+- **OAuth/OIDC demo enabled:** Pass `--Demo:EnableOAuth=true` (or set in `appsettings.json`). This spins up the mock OAuth provider, generates `mock-api.json`, and registers `secure_` tools that exercise auth code flow end to end.
 
 ## Using MCPify as a NuGet Package
 
