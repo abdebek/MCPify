@@ -9,6 +9,10 @@
 - **Zero-Config Stdio Support:** Built-in support for standard input/output (Stdio) transport, perfect for local integration with AI desktop apps.
 - **HTTP (SSE) Support:** Full support for Server-Sent Events (SSE) for remote or multi-client scenarios.
 - **Schema Generation:** Automatic JSON schema generation for API parameters and request bodies.
+- **Advanced Authentication:**
+  - **OAuth 2.0 Authorization Code Flow:** Interactive browser login for local tools.
+  - **OAuth 2.0 Device Code Flow:** Headless login for remote/containerized servers.
+  - **Standard Auth:** API Key, Bearer Token, Basic Auth.
 
 ## 📦 Installation
 
@@ -27,6 +31,8 @@ Configure MCPify in your ASP.NET Core application:
 ```csharp
 using MCPify.Core;
 using MCPify.Hosting;
+using MCPify.Core.Auth;
+using MCPify.Core.Auth.OAuth;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,12 +49,19 @@ builder.Services.AddMcpify(options =>
         ToolPrefix = "local_" // Prefix for generated tools (e.g., local_get_user)
     };
 
-    // (Optional) Register external APIs via Swagger
+    // (Optional) Register external APIs via Swagger with OAuth2
     options.ExternalApis.Add(new()
     {
-        SwaggerUrl = "https://petstore.swagger.io/v2/swagger.json",
-        ApiBaseUrl = "https://petstore.swagger.io/v2",
-        ToolPrefix = "petstore_"
+        SwaggerUrl = "https://api.example.com/swagger.json",
+        ApiBaseUrl = "https://api.example.com",
+        ToolPrefix = "myapi_",
+        Authentication = new OAuthAuthorizationCodeAuthentication(
+            clientId: "your-client-id",
+            authorizationEndpoint: "https://auth.example.com/authorize",
+            tokenEndpoint: "https://auth.example.com/token",
+            scope: "read write",
+            tokenStore: new FileTokenStore("token.json") // Persist token to disk
+        )
     });
 });
 
@@ -76,7 +89,7 @@ To use your app as a local tool in Claude Desktop:
     dotnet publish -c Release
     ```
 
-2.  **Update your Claude config** (`%APPDATA%\Claude\claude_desktop_config.json`):
+2.  **Update your Claude config** (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on Mac):
     ```json
     {
       "mcpServers": {
@@ -120,21 +133,49 @@ Proxy external services by providing their OpenAPI spec.
 
 Secure your external or local endpoints using built-in authentication providers.
 
+#### OAuth 2.0 Authorization Code (Interactive)
+Best for local desktop apps (CLI, Claude Desktop). Opens a browser window for the user to log in.
+
 ```csharp
-using MCPify.Core.Auth;
+Authentication = new OAuthAuthorizationCodeAuthentication(
+    clientId: "...",
+    authorizationEndpoint: "...",
+    tokenEndpoint: "...",
+    scope: "...",
+    tokenStore: new FileTokenStore("token.json"),
+    callbackHost: "localhost", // Optional: Defaults to localhost
+    callbackPath: "/callback"  // Optional: Defaults to /callback
+)
+```
 
-// ...
+#### OAuth 2.0 Device Flow (Headless)
+Best for remote servers or containers. Provides a code to the user to enter on a separate device.
 
-options.ExternalApis.Add(new()
-{
-    // ...
-    Authentication = new ApiKeyAuthentication("api-key", "secret", ApiKeyLocation.Header)
-});
+```csharp
+Authentication = new DeviceCodeAuthentication(
+    clientId: "...",
+    deviceCodeEndpoint: "...",
+    tokenEndpoint: "...",
+    scope: "...",
+    tokenStore: new InMemoryTokenStore(),
+    userPrompt: (uri, code) => 
+    {
+        Console.WriteLine($"Please visit {uri} and enter code: {code}");
+        return Task.CompletedTask;
+    }
+)
+```
 
-// Supported Providers:
-// - ApiKeyAuthentication(name, value, location)
-// - BearerAuthentication(token)
-// - BasicAuthentication(username, password)
+#### Standard Providers
+```csharp
+// API Key
+new ApiKeyAuthentication("api-key", "secret", ApiKeyLocation.Header)
+
+// Bearer Token
+new BearerAuthentication("access-token")
+
+// Basic Auth
+new BasicAuthentication("username", "password")
 ```
 
 ## 🧪 Tests

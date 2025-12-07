@@ -1,5 +1,6 @@
 using MCPify.Core;
 using MCPify.Core.Auth;
+using MCPify.Core.Auth.OAuth;
 using MCPify.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Routing;
@@ -12,7 +13,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 var transport = builder.Configuration.GetValue<McpTransportType>("Mcpify:Transport", McpTransportType.Stdio);
 
-if (transport == McpTransportType.Stdio)
+if (transport == McpTransportType.Stdio && !args.Contains("--debug"))
 {
     builder.Logging.ClearProviders();
 }
@@ -100,6 +101,29 @@ builder.Services.AddMcpify(options =>
             ToolPrefix = "file_"
         });
     }
+
+    // Example: Connect to GitHub API using OAuth2 (Device Flow or Authorization Code)
+    // NOTE: This requires a real GitHub Client ID/Secret to work. 
+    // We are adding it as a commented-out example for the user to enable.
+    /*
+    options.ExternalApis.Add(new()
+    {
+        // GitHub doesn't publish a standard Swagger JSON, but for demo purposes, 
+        // imagine we have one or point to a proxy. 
+        // Real-world usage would point to your own API's swagger.
+        SwaggerUrl = "https://api.github.com/openapi", // Hypothetical
+        ApiBaseUrl = "https://api.github.com",
+        ToolPrefix = "github_",
+        Authentication = new OAuthAuthorizationCodeAuthentication(
+            clientId: "YOUR_GITHUB_CLIENT_ID",
+            clientSecret: "YOUR_GITHUB_CLIENT_SECRET",
+            authorizationEndpoint: "https://github.com/login/oauth/authorize",
+            tokenEndpoint: "https://github.com/login/oauth/access_token",
+            scope: "repo user",
+            tokenStore: new FileTokenStore("github_token.json")
+        )
+    });
+    */
 });
 
 var app = builder.Build();
