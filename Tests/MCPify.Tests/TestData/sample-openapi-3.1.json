@@ -1,0 +1,89 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Comprehensive Edge Case Test API",
+    "version": "1.0.0",
+    "description": "A synthetic 3.1 spec designed to crash 3.0 readers if not downgraded correctly."
+  },
+  "paths": {
+    "/test": {
+      "get": {
+        "operationId": "GetTest",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EdgeCaseModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EdgeCaseModel": {
+        "type": "object",
+        "properties": {
+          "prop_nullable_array": {
+            "description": "Case 1: type: ['string', 'null'] -> nullable: true",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "prop_mixed_union": {
+            "description": "Case 2: type: ['integer', 'boolean'] -> oneOf",
+            "type": [
+              "integer",
+              "boolean"
+            ]
+          },
+          "prop_anyof_nullable": {
+            "description": "Case 3: anyOf with null -> nullable: true",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "prop_exclusive_min": {
+            "description": "Case 4: exclusiveMinimum number -> exclusiveMinimum: true",
+            "type": "integer",
+            "exclusiveMinimum": 10
+          },
+          "prop_exclusive_max": {
+            "description": "Case 5: exclusiveMaximum number -> exclusiveMaximum: true",
+            "type": "integer",
+            "exclusiveMaximum": 100
+          },
+          "prop_const": {
+            "description": "Case 6: const -> enum",
+            "type": "string",
+            "const": "fixed_value"
+          },
+          "prop_examples": {
+            "description": "Case 7: examples -> example (first item)",
+            "type": "string",
+            "examples": [
+              "example_1",
+              "example_2"
+            ]
+          },
+          "prop_base64": {
+            "description": "Case 8: contentEncoding: base64 -> format: byte",
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        }
+      }
+    }
+  }
+}

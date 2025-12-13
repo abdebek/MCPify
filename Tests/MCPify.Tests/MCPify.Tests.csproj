@@ -33,7 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="TestData\bank-openapi.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="TestData\sample-openapi-3.1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
