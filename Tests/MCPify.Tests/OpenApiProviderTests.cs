@@ -8,7 +8,7 @@ public class OpenApiProviderTests
     [Fact]
     public async Task LoadAsync_LoadsLocalOpenApiFile_AndExtractsOperations()
     {
-        var specPath = Path.Combine(AppContext.BaseDirectory, "bank-openapi.json");
+        var specPath = Path.Combine(AppContext.BaseDirectory, "TestData", "bank-openapi.json");
         Assert.True(File.Exists(specPath), $"Spec file not found at {specPath}");
 
         var provider = new OpenApiV3Provider(TimeSpan.FromSeconds(10));

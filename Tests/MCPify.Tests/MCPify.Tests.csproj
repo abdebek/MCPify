@@ -33,9 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\.temp\bank-openapi.json" Link="bank-openapi.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <None Include="TestData\bank-openapi.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
