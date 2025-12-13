@@ -152,6 +152,7 @@ Proxy external services by providing their OpenAPI spec.
 - Built-in provider uses `Microsoft.OpenApi.Readers` and supports Swagger 2.0 and OpenAPI 3.0/3.1 documents.
 - Invalid/unsupported specs fail fast with an exception that lists parsing errors.
 - To use another parser or source, set `options.ProviderOverride` to your own `IOpenApiProvider` implementation (and optionally `options.SchemaGeneratorOverride` for custom JSON schemas).
+- 3.1 compatibility: if your spec is 3.1, MCPify will down-convert known 3.1-only constructs (e.g., `type: ["string","null"]`, numeric `exclusiveMinimum/Maximum`, `const`, `examples`, `jsonSchemaDialect`, `webhooks`) to a 3.0.3-compatible shape before parsing.
 
 ### Authentication
 
