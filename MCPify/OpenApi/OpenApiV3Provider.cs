@@ -59,15 +59,14 @@ public class OpenApiV3Provider : IOpenApiProvider
         {
             return Parse(content);
         }
-        catch (OpenApiUnsupportedSpecVersionException) when (content.Contains("\"openapi\": \"3.1"))
+        catch (OpenApiUnsupportedSpecVersionException)
         {
             var downgraded = DowngradeOpenApi31To30(content);
             return Parse(downgraded);
         }
         catch (OpenApiException)
         {
-            // If the reader fails (e.g., "Cannot create scalar value") but it looks like 3.1, attempt downgrade.
-            if (content.Contains("\"openapi\": \"3.1"))
+            if (content.Contains("\"openapi\": \"3.1") || content.Contains("\"openapi\":\"3.1"))
             {
                 var downgraded = DowngradeOpenApi31To30(content);
                 return Parse(downgraded);
@@ -83,55 +82,93 @@ public class OpenApiV3Provider : IOpenApiProvider
             var node = JsonNode.Parse(content);
             if (node is JsonObject obj)
             {
-                // 1. Fix version
                 obj["openapi"] = "3.0.3";
-                obj.AsObject().Remove("jsonSchemaDialect");
+                obj.Remove("jsonSchemaDialect");
+                obj.Remove("webhooks");
 
-                // 2. Fix nullable arrays (["null", "string"] -> nullable: true)
-                DowngradeNullability(obj);
+                DowngradeSchemaFeatures(obj);
 
                 return obj.ToJsonString();
             }
         }
         catch
         {
-            // Fallback: This regex only fixes the version, not the array types.
-            // Only hits if JSON parsing fails completely.
         }
 
         return Regex.Replace(content, "\"openapi\"\\s*:\\s*\"3\\.1\\.[^\"]*\"", "\"openapi\": \"3.0.3\"", RegexOptions.IgnoreCase);
     }
 
-    private static void DowngradeNullability(JsonNode? node)
+    private static void DowngradeSchemaFeatures(JsonNode? node)
     {
         if (node == null) return;
 
         if (node is JsonObject obj)
         {
-            // Check if this specific object has the 3.1 type array
             if (obj.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonArray typeArray)
             {
-                // Look for ["null", "string"] or ["string", "null"]
-                if (typeArray.Count == 2 && typeArray.Any(t => t?.GetValue<string>() == "null"))
+                if (typeArray.Any(t => t?.GetValue<string>() == "null"))
                 {
-                    // Convert to 3.0 format
                     obj["nullable"] = true;
-                    var nonNullType = typeArray.First(t => t?.GetValue<string>() != "null");
-                    obj["type"] = nonNullType?.GetValue<string>(); // Set single string type
+                    var nonNullType = typeArray.FirstOrDefault(t => t?.GetValue<string>() != "null");
+                    if (nonNullType != null)
+                    {
+                        obj["type"] = nonNullType.GetValue<string>();
+                    }
+                    else
+                    {
+                        obj.Remove("type");
+                    }
+                }
+                else if (typeArray.Count > 0)
+                {
+                    obj["type"] = typeArray.First()?.GetValue<string>();
                 }
             }
 
-            // Continue recursion for all children
-            foreach (var property in obj.ToList()) // ToList avoids modification issues during iteration
+            if (obj.TryGetPropertyValue("exclusiveMinimum", out var exMinNode) && 
+                (exMinNode is JsonValue) && 
+                exMinNode.GetValueKind() == System.Text.Json.JsonValueKind.Number)
             {
-                DowngradeNullability(property.Value);
+                var val = exMinNode.GetValue<decimal>();
+                obj["minimum"] = val;
+                obj["exclusiveMinimum"] = true;
+            }
+
+            if (obj.TryGetPropertyValue("exclusiveMaximum", out var exMaxNode) && 
+                (exMaxNode is JsonValue) && 
+                exMaxNode.GetValueKind() == System.Text.Json.JsonValueKind.Number)
+            {
+                var val = exMaxNode.GetValue<decimal>();
+                obj["maximum"] = val;
+                obj["exclusiveMaximum"] = true;
+            }
+
+            if (obj.TryGetPropertyValue("const", out var constNode))
+            {
+                obj.Remove("const");
+                var enumArray = new JsonArray { constNode?.DeepClone() };
+                obj["enum"] = enumArray;
+            }
+
+            if (obj.TryGetPropertyValue("examples", out var examplesNode))
+            {
+                obj.Remove("examples");
+                if (examplesNode is JsonArray arr && arr.Count > 0 && !obj.ContainsKey("example"))
+                {
+                    obj["example"] = arr[0]?.DeepClone();
+                }
+            }
+
+            foreach (var property in obj.ToList())
+            {
+                DowngradeSchemaFeatures(property.Value);
             }
         }
         else if (node is JsonArray array)
         {
             foreach (var element in array)
             {
-                DowngradeNullability(element);
+                DowngradeSchemaFeatures(element);
             }
         }
     }
