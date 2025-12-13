@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
 using MCPify.Core.Auth.OAuth;
+using MCPify.Core;
+using MCPify.Core.Auth;
 
 namespace MCPify.Core.Auth.DeviceCode;
 
@@ -9,16 +11,19 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
     private readonly string _deviceCodeEndpoint;
     private readonly string _tokenEndpoint;
     private readonly string _scope;
-    private readonly ITokenStore _tokenStore;
+    private readonly ISecureTokenStore _secureTokenStore;
+    private readonly IMcpContextAccessor _mcpContextAccessor;
     private readonly HttpClient _httpClient;
     private readonly Func<string, string, Task> _userPrompt;
+    private const string _deviceCodeProviderName = "DeviceCode";
 
     public DeviceCodeAuthentication(
         string clientId,
         string deviceCodeEndpoint,
         string tokenEndpoint,
         string scope,
-        ITokenStore tokenStore,
+        ISecureTokenStore secureTokenStore,
+        IMcpContextAccessor mcpContextAccessor,
         Func<string, string, Task> userPrompt,
         HttpClient? httpClient = null)
     {
@@ -26,14 +31,18 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         _deviceCodeEndpoint = deviceCodeEndpoint;
         _tokenEndpoint = tokenEndpoint;
         _scope = scope;
-        _tokenStore = tokenStore;
+        _secureTokenStore = secureTokenStore;
+        _mcpContextAccessor = mcpContextAccessor;
         _userPrompt = userPrompt;
         _httpClient = httpClient ?? new HttpClient();
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        var tokenData = await _tokenStore.GetTokenAsync(cancellationToken);
+        var sessionId = _mcpContextAccessor.SessionId
+            ?? throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
+
+        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _deviceCodeProviderName, cancellationToken);
 
         if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
         {
@@ -46,24 +55,24 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
             try
             {
                 tokenData = await RefreshTokenAsync(tokenData.RefreshToken, cancellationToken);
-                await _tokenStore.SaveTokenAsync(tokenData, cancellationToken);
+                await _secureTokenStore.SaveTokenAsync(sessionId, _deviceCodeProviderName, tokenData, cancellationToken);
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 return;
             }
-            catch
+            catch (Exception ex)
             {
-                // Refresh failed, fall back to full login
+                Console.Error.WriteLine($"Token refresh failed for session {sessionId} (Device Code): {ex.Message}");
+                await _secureTokenStore.DeleteTokenAsync(sessionId, _deviceCodeProviderName, cancellationToken);
             }
         }
 
         tokenData = await PerformDeviceLoginAsync(cancellationToken);
-        await _tokenStore.SaveTokenAsync(tokenData, cancellationToken);
+        await _secureTokenStore.SaveTokenAsync(sessionId, _deviceCodeProviderName, tokenData, cancellationToken);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
     }
 
     private async Task<TokenData> PerformDeviceLoginAsync(CancellationToken cancellationToken)
     {
-        // 1. Request Device Code
         var codeRequest = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             { "client_id", _clientId },
@@ -76,10 +85,8 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
 
         if (codeData == null) throw new Exception("Invalid device code response");
 
-        // 2. Prompt User
         await _userPrompt(codeData.verification_uri, codeData.user_code);
 
-        // 3. Poll for Token
         var interval = codeData.interval > 0 ? codeData.interval : 5;
         var expiresAt = DateTime.UtcNow.AddSeconds(codeData.expires_in);
 

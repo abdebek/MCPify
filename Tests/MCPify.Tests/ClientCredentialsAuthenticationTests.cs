@@ -15,12 +15,14 @@ public class ClientCredentialsAuthenticationTests
         await server.StartAsync();
 
         var store = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor();
         var auth = new ClientCredentialsAuthentication(
             "client-id",
             "client-secret",
             server.TokenEndpoint,
             "scopeA scopeB",
             store,
+            accessor,
             server.CreateClient());
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");

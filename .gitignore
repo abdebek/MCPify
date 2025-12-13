@@ -47,3 +47,8 @@ Sample/demo_token.json
 Sample/oauth_error.log
 *.log
 demo_token.json
+
+
+## misc
+
+Sample/AuthTokens/

@@ -6,11 +6,12 @@
 
 - **OpenAPI Bridge:** Automatically converts any Swagger/OpenAPI specification (JSON/YAML) into MCP Tools.
 - **Local Endpoint Bridge:** Automatically discovers and exposes your application's ASP.NET Core Minimal APIs as MCP Tools.
+- **RFC 9728 Protected Resource Metadata:** Exposes a standard `/.well-known/oauth-protected-resource` endpoint for OAuth 2.0 clients to dynamically discover authentication requirements.
 - **Zero-Config Stdio Support:** Built-in support for standard input/output (Stdio) transport, perfect for local integration with AI desktop apps.
 - **HTTP (SSE) Support:** Full support for Server-Sent Events (SSE) for remote or multi-client scenarios.
 - **Schema Generation:** Automatic JSON schema generation for API parameters and request bodies.
 - **Advanced Authentication:**
-  - **OAuth 2.0 Authorization Code Flow:** Interactive browser login for local tools.
+  - **OAuth 2.0 Authorization Code Flow (managed & pass-through):** Supports interactive browser login with per-session token isolation using `ISecureTokenStore`. Also allows clients to pass their own OAuth tokens directly to MCPify, which are then forwarded to backend APIs.
   - **OAuth 2.0 Device Code Flow:** Headless login for remote/containerized servers.
   - **Standard Auth:** API Key, Bearer Token, Basic Auth.
 
@@ -33,10 +34,12 @@ using MCPify.Core;
 using MCPify.Hosting;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.OAuth;
+using Microsoft.AspNetCore.Routing; // Required for IEndpointRouteBuilder
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Add MCPify Services
+// ... your other services ...
+
 builder.Services.AddMcpify(options =>
 {
     // Choose Transport (Stdio for local tools, Http for remote)
@@ -50,31 +53,44 @@ builder.Services.AddMcpify(options =>
     };
 
     // (Optional) Register external APIs via Swagger with OAuth2
+    // OAuth configuration will be automatically parsed from SwaggerUrl
     options.ExternalApis.Add(new()
     {
-        SwaggerUrl = "https://api.example.com/swagger.json",
-        ApiBaseUrl = "https://api.example.com",
-        ToolPrefix = "myapi_",
-        Authentication = new OAuthAuthorizationCodeAuthentication(
-            clientId: "your-client-id",
-            authorizationEndpoint: "https://auth.example.com/authorize",
-            tokenEndpoint: "https://auth.example.com/token",
-            scope: "read write",
-            tokenStore: new FileTokenStore("token.json") // Persist token to disk
+        SwaggerUrl = "https://petstore.swagger.io/v2/swagger.json",
+        ApiBaseUrl = "https://petstore.swagger.io/v2",
+        ToolPrefix = "petstore_",
+        // If the external API requires authentication, you can configure it here.
+        // For OAuth Authorization Code flow, MCPify will manage tokens if no incoming token is provided.
+        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(
+            clientId: "your-client-id", // Your OAuth client ID for Petstore
+            authorizationEndpoint: "https://petstore.swagger.io/oauth/dialog", // Example authorization endpoint
+            tokenEndpoint: "https://petstore.swagger.io/oauth/token", // Example token endpoint
+            scope: "write:pets read:pets", // Required scopes
+            secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(), // MCPify's secure token store
+            mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(), // Accessor for current MCP context
+            redirectUri: "http://localhost:5000/auth/callback" // Your app's callback URI
         )
     });
 });
 
 var app = builder.Build();
 
-// 2. Map your APIs as usual
-app.MapGet("/api/users/{id}", (int id) => new { Id = id, Name = "John Doe" });
+// ... your other middleware (e.g., app.UseRouting(), app.UseAuthentication(), app.UseAuthorization()) ...
 
-// 3. Register MCP Tools (Must be called after endpoints are mapped but before Run)
+// Enable MCPify's context accessor middleware
+app.UseMcpifyContext();
+// Enable MCPify's OAuth authentication middleware for challenging clients
+app.UseMcpifyOAuth();
+
+// Map your APIs as usual (e.g., Minimal APIs)
+app.MapGet("/api/hello", () => "Hello MCPify!");
+
+// Register MCP Tools (Must be called after endpoints are mapped but before Run)
+// This should typically be awaited if app.Run is async.
 var registrar = app.Services.GetRequiredService<McpifyServiceRegistrar>();
 await registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources);
 
-// 4. Map the MCP Endpoint
+// Map the MCP Endpoint (for HTTP transport) and OAuth metadata endpoint
 app.MapMcpifyEndpoint(); 
 
 app.Run();
@@ -103,7 +119,7 @@ To use your app as a local tool in Claude Desktop:
     }
     ```
 
-3.  **Restart Claude.** Your API endpoints will now appear as tools (e.g., `local_api_users_get`)!
+3.  **Restart Claude.** Your API endpoints will now appear as tools!
 
 ## Configuration
 
@@ -111,8 +127,8 @@ To use your app as a local tool in Claude Desktop:
 
 - **Stdio (`McpTransportType.Stdio`)**: Default for local tools. Uses Standard Input/Output.
     - *Note:* Console logging is automatically disabled in this mode to prevent protocol corruption.
-- **Http (`McpTransportType.Http`)**: Uses Server-Sent Events (SSE).
-    - Default endpoints: `/sse` (connection) and `/messages` (requests).
+- **Http (`McpTransportType.Http`)**: Uses Server-Sent Events (SSE) and exposes a `/.well-known/oauth-protected-resource` endpoint.
+    - Default endpoints: `/sse` (connection), `/messages` (requests), `/.well-known/oauth-protected-resource`.
 
 ### Local Endpoints
 
@@ -120,58 +136,73 @@ MCPify inspects your application's routing table to generate tools.
 - `Enabled`: Set to `true` to enable.
 - `ToolPrefix`: A string to prepend to tool names (e.g., "api_").
 - `Filter`: A function to select which endpoints to expose.
+- `AuthenticationFactory`: A factory to provide an `IAuthenticationProvider` for these local tools.
 
 ### External APIs
 
 Proxy external services by providing their OpenAPI spec.
 - `SwaggerUrl`: URL to the `swagger.json`.
 - `ApiBaseUrl`: The base URL where API requests should be sent.
+- `ToolPrefix`: A string to prepend to tool names (e.g., "myapi_").
 - `DefaultHeaders`: Custom headers (e.g., Authorization) to include in requests.
 - `OpenApiDownloadTimeout`: Configurable timeout for downloading OpenAPI specifications. Defaults to 30 seconds.
+- `AuthenticationFactory`: A factory to provide an `IAuthenticationProvider` for tools from this external API.
 
 #### OpenAPI support
-- Built-in provider uses `Microsoft.OpenApi.Readers` and supports Swagger 2.0 and OpenAPI 3.x documents.
-- Invalid/unsupported specs are skipped with a warning in logs.
+- Built-in provider uses `Microsoft.OpenApi.Readers` and supports Swagger 2.0 and OpenAPI 3.0/3.1 documents.
+- Invalid/unsupported specs fail fast with an exception that lists parsing errors.
 - To use another parser or source, set `options.ProviderOverride` to your own `IOpenApiProvider` implementation (and optionally `options.SchemaGeneratorOverride` for custom JSON schemas).
 
 ### Authentication
 
-Secure your external or local endpoints using built-in authentication providers.
+Secure your external or local endpoints using built-in authentication providers. MCPify now supports both managed authentication (where MCPify handles token storage and refresh) and pass-through authentication (where the client provides the token).
 
 #### OAuth 2.0 Authorization Code (Interactive)
-Best for local desktop apps (CLI, Claude Desktop). Opens a browser window for the user to log in.
+Best for local desktop apps (CLI, Claude Desktop). MCPify's built-in `LoginTool` facilitates this interactive flow. Tokens are isolated per session using `ISecureTokenStore`.
 
 ```csharp
-Authentication = new OAuthAuthorizationCodeAuthentication(
-    clientId: "...",
-    authorizationEndpoint: "...",
-    tokenEndpoint: "...",
-    scope: "...",
-    tokenStore: new FileTokenStore("token.json"),
-    callbackHost: "localhost", // Optional: Defaults to localhost
-    callbackPath: "/callback"  // Optional: Defaults to /callback
+AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(
+    clientId: "your-client-id",
+    authorizationEndpoint: "https://auth.example.com/authorize",
+    tokenEndpoint: "https://auth.example.com/token",
+    scope: "read write",
+    secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(), // Use the registered secure token store
+    mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(), // Accessor for current MCP context
+    redirectUri: "http://localhost:5000/auth/callback", // Your app's callback URI
+    usePkce: true // Recommended for public clients
 )
+
+// Ensure your app maps the callback endpoint, e.g., app.MapAuthCallback("/auth/callback");
 ```
+When a client like Claude Desktop needs to authenticate, it will be challenged (via `WWW-Authenticate` header) and directed to your app's `/.well-known/oauth-protected-resource` endpoint to discover the Authorization Server. It then initiates the OAuth 2.0 Authorization Code flow. After successful authentication, the client sends the obtained `Bearer` token to MCPify, which is then passed through to the target API.
 
 #### OAuth 2.0 Device Flow (Headless)
-Best for remote servers or containers. Provides a code to the user to enter on a separate device.
+Best for remote servers or containers. MCPify's `LoginTool` can also initiate this flow, providing a code for the user to enter on a separate device.
 
 ```csharp
-Authentication = new DeviceCodeAuthentication(
-    clientId: "...",
-    deviceCodeEndpoint: "...",
-    tokenEndpoint: "...",
-    scope: "...",
-    tokenStore: new InMemoryTokenStore(),
-    userPrompt: (uri, code) => 
+AuthenticationFactory = sp => new DeviceCodeAuthentication(
+    clientId: "your-client-id",
+    deviceCodeEndpoint: "https://auth.example.com/device",
+    tokenEndpoint: "https://auth.example.com/token",
+    scope: "read write",
+    secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
+    mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
+    userPrompt: (verificationUri, userCode) => 
     {
-        Console.WriteLine($"Please visit {uri} and enter code: {code}");
+        Console.WriteLine($"Please visit {verificationUri} and enter code: {userCode}");
         return Task.CompletedTask;
     }
 )
 ```
 
+#### Secure Token Storage (`ISecureTokenStore`)
+MCPify provides `EncryptedFileTokenStore` for secure, file-based persistence of authentication tokens. This is automatically registered when you call `builder.Services.AddMcpify()`.
+
+#### Pass-Through Bearer Tokens
+If a client provides an `Authorization: Bearer <token>` header to MCPify, this token will automatically be made available to `IAuthenticationProvider` implementations via `IMcpContextAccessor.AccessToken`. The `OAuthAuthorizationCodeAuthentication` implementation will prioritize this pass-through token over any tokens it might have stored internally.
+
 #### Standard Providers
+These can be used when simple, static tokens are sufficient.
 ```csharp
 // API Key
 new ApiKeyAuthentication("api-key", "secret", ApiKeyLocation.Header)
@@ -186,9 +217,11 @@ new BasicAuthentication("username", "password")
 ## Tests
 
 Tests are fully integration-based (no mocks). They spin up in-memory HTTP/OIDC servers to verify:
-- Auth code + device code flows (including ID token validation via JWKS).
-- Proxy tool path/constraint handling and header forwarding.
-- Core authentication providers.
+-   Auth code + device code flows (including ID token validation via JWKS).
+-   OAuth 2.0 Protected Resource Metadata endpoint (`/.well-known/oauth-protected-resource`).
+-   Authentication middleware challenging clients with `WWW-Authenticate` headers.
+-   Proxy tool path/constraint handling and header forwarding.
+-   Core authentication providers, including token storage and pass-through.
 
 Run them from the repo root:
 
@@ -203,4 +236,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License.
-

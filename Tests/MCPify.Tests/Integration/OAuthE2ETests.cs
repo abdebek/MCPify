@@ -22,17 +22,7 @@ public class OAuthE2ETests : IAsyncLifetime
     public async Task AuthorizationCodeFlow_EndToEnd()
     {
         var tokenStore = new InMemoryTokenStore();
-
-        Action<string> openBrowserSimulation = url =>
-        {
-            Task.Run(async () =>
-            {
-                await Task.Delay(200);
-                var handler = new HttpClientHandler { AllowAutoRedirect = true };
-                var browserClient = new HttpClient(handler);
-                await browserClient.GetAsync(url);
-            });
-        };
+        var accessor = new MockMcpContextAccessor();
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -40,19 +30,39 @@ public class OAuthE2ETests : IAsyncLifetime
             _provider.TokenEndpoint,
             "scope",
             tokenStore,
+            accessor,
             httpClient: _provider.CreateClient(),
-            openBrowserAction: openBrowserSimulation
+            redirectUri: "http://localhost/callback"
         );
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
+        // 1. Initiate Flow
+        var authUrl = auth.BuildAuthorizationUrl(accessor.SessionId!);
 
+        // 2. Simulate User visiting Auth URL
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        var browser = new HttpClient(handler);
+        var authResponse = await browser.GetAsync(authUrl);
+
+        Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
+        var callbackUrl = authResponse.Headers.Location!;
+
+        // 3. Extract Code and State from Callback URL
+        var query = QueryHelpers.ParseQuery(callbackUrl.Query);
+        var code = query["code"].ToString();
+        var state = query["state"].ToString();
+
+        // 4. Handle Callback
+        await auth.HandleAuthorizationCallbackAsync(code, state);
+
+        // 5. Apply Async (Now it should have the token)
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
         await auth.ApplyAsync(request);
 
         Assert.NotNull(request.Headers.Authorization);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.False(string.IsNullOrEmpty(request.Headers.Authorization.Parameter));
 
-        var stored = await tokenStore.GetTokenAsync();
+        var stored = await tokenStore.GetTokenAsync("test-session", "OAuth");
         Assert.NotNull(stored);
         Assert.Equal(request.Headers.Authorization.Parameter, stored!.AccessToken);
     }
@@ -61,6 +71,7 @@ public class OAuthE2ETests : IAsyncLifetime
     public async Task DeviceCodeFlow_EndToEnd()
     {
         var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor();
 
         Func<string, string, Task> userPrompt = (uri, code) =>
         {
@@ -74,6 +85,7 @@ public class OAuthE2ETests : IAsyncLifetime
             _provider.TokenEndpoint,
             "scope",
             tokenStore,
+            accessor,
             userPrompt,
             _provider.CreateClient()
         );
@@ -85,6 +97,31 @@ public class OAuthE2ETests : IAsyncLifetime
         Assert.NotNull(request.Headers.Authorization);
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.False(string.IsNullOrEmpty(request.Headers.Authorization!.Parameter));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_UsesPassThroughToken_WhenPresentInContext()
+    {
+        var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor { AccessToken = "pass-through-token" };
+
+        var auth = new OAuthAuthorizationCodeAuthentication(
+            "client_id",
+            _provider.AuthorizationEndpoint,
+            _provider.TokenEndpoint,
+            "scope",
+            tokenStore,
+            accessor,
+            httpClient: _provider.CreateClient(),
+            redirectUri: "http://localhost/callback"
+        );
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
+
+        await auth.ApplyAsync(request);
+
+        Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
+        Assert.Equal("pass-through-token", request.Headers.Authorization?.Parameter);
     }
 
     [Fact]

@@ -1,23 +1,14 @@
 {
   "openapi": "3.0.1",
   "info": {
-    "title": "Sample Local API",
-    "version": "1.0"
+    "title": "Local Sample API",
+    "version": "1.0.0"
   },
   "paths": {
-    "/api/products/{id}": {
+    "/weather": {
       "get": {
-        "operationId": "GetProduct",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
+        "operationId": "getWeather",
+        "summary": "Get current weather (Demo from local JSON)",
         "responses": {
           "200": {
             "description": "Success",
@@ -26,47 +17,18 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "id": {
-                      "type": "integer"
+                    "temperature": {
+                      "type": "integer",
+                      "description": "Temperature in Celsius"
                     },
-                    "name": {
-                      "type": "string"
-                    },
-                    "price": {
-                      "type": "number"
+                    "condition": {
+                      "type": "string",
+                      "description": "Weather condition"
                     }
                   }
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/products": {
-      "post": {
-        "operationId": "CreateProduct",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "price": {
-                    "type": "number"
-                  }
-                },
-                "required": ["name", "price"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created"
           }
         }
       }

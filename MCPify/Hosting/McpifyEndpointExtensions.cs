@@ -1,4 +1,5 @@
 using MCPify.Core;
+using MCPify.Core.Auth;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -10,17 +11,19 @@ using MCPify.Endpoints;
 using MCPify.Tools;
 using MCPify.Schema;
 using System.Net.Http;
+using Microsoft.AspNetCore.Http;
 
 namespace MCPify.Hosting;
 
 public static class McpifyEndpointExtensions
 {
-    public static WebApplication MapMcpifyEndpoint(
-        this WebApplication app,
+    public static IEndpointRouteBuilder MapMcpifyEndpoint(
+        this IEndpointRouteBuilder app,
         string path = "")
     {
-        var options = app.Services.GetService<McpifyOptions>();
-        var logger = app.Services.GetRequiredService<ILogger<WebApplication>>();
+        var services = app.ServiceProvider;
+        var options = services.GetService<McpifyOptions>();
+        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("McpifyEndpointExtensions");
 
         if (options == null)
         {
@@ -32,14 +35,14 @@ public static class McpifyEndpointExtensions
         {
             try
             {
-                var endpointProvider = app.Services.GetRequiredService<IEndpointMetadataProvider>() as AspNetCoreEndpointMetadataProvider;
+                var endpointProvider = services.GetRequiredService<IEndpointMetadataProvider>() as AspNetCoreEndpointMetadataProvider;
                 if (endpointProvider == null)
                 {
                     logger.LogError("[MCPify] AspNetCoreEndpointMetadataProvider not found for local endpoints.");
                 }
                 else
                 {
-                    var toolCollection = app.Services.GetService<McpServerPrimitiveCollection<McpServerTool>>();
+                    var toolCollection = services.GetService<McpServerPrimitiveCollection<McpServerTool>>();
                     if (toolCollection == null)
                     {
                          logger.LogWarning("[MCPify] McpServerPrimitiveCollection not found. Local endpoints cannot be registered.");
@@ -55,13 +58,15 @@ public static class McpifyEndpointExtensions
                         }
                         logger.LogInformation($"[MCPify] After local endpoint filter, {operations.Count} operations remaining.");
 
-                        var httpClient = app.Services.GetRequiredService<IHttpClientFactory>().CreateClient();
+                        var httpClient = services.GetRequiredService<IHttpClientFactory>().CreateClient();
 
                         string BaseUrlProvider()
                         {
-                            var server = app.Services.GetService<IServer>();
+                            var server = services.GetService<IServer>();
                             var addresses = server?.Features.Get<IServerAddressesFeature>()?.Addresses;
-                            var baseUrl = addresses?.FirstOrDefault() ?? Constants.DefaultBaseUrl;
+                            var baseUrl = options.LocalEndpoints?.BaseUrlOverride
+                                ?? addresses?.FirstOrDefault()
+                                ?? Constants.DefaultBaseUrl;
                             logger.LogDebug($"[MCPify] BaseUrlProvider returning: {baseUrl}");
                             return baseUrl;
                         }
@@ -86,7 +91,7 @@ public static class McpifyEndpointExtensions
                                 DefaultHeaders = options.LocalEndpoints.DefaultHeaders
                             };
 
-                            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, app.Services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, options.LocalEndpoints.Authentication);
+                            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, options.LocalEndpoints.AuthenticationFactory);
                             toolCollection.Add(tool);
                             count++;
                         }
@@ -104,6 +109,41 @@ public static class McpifyEndpointExtensions
         {
             app.MapMcp(path);
         }
+
+        // Map OAuth Protected Resource Metadata
+        app.MapGet("/.well-known/oauth-protected-resource", (OAuthConfigurationStore oauthStore, IServer server, McpifyOptions opts) =>
+        {
+            var configs = oauthStore.GetConfigurations().ToList();
+            if (!configs.Any())
+            {
+                return Results.NotFound(new { error = "OAuth not configured" });
+            }
+
+            var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
+            var resourceUrl = opts.LocalEndpoints?.BaseUrlOverride ?? addresses?.FirstOrDefault() ?? Constants.DefaultBaseUrl;
+
+            // Extract potential issuer URLs from AuthorizationUrl
+            var issuers = configs.Select(c => 
+            {
+                if (Uri.TryCreate(c.AuthorizationUrl, UriKind.Absolute, out var uri))
+                {
+                    return uri.GetLeftPart(UriPartial.Authority);
+                }
+                return null;
+            })
+            .Where(x => x != null)
+            .Distinct()
+            .ToList();
+
+            return Results.Ok(new
+            {
+                resource = resourceUrl,
+                authorization_servers = issuers,
+                scopes_supported = configs.SelectMany(c => c.Scopes.Keys).Distinct().ToList(),
+                bearer_methods_supported = new[] { "header" } // We only support Bearer header
+            });
+        })
+        .ExcludeFromDescription();
 
         return app;
     }

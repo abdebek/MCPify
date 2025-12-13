@@ -1,20 +1,18 @@
 # MCPify Sample Application
 
-This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints and OpenAPI (Swagger) specifications as tools for the **Model Context Protocol (MCP)**.
+This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints and OpenAPI (Swagger) specifications as tools for the **Model Context Protocol (MCP)**. It showcases a fully functional OAuth 2.0 Authorization Code flow using OpenIddict as an in-app Identity Provider, integrating with MCPify's authentication features.
 
-What this sample includes:
-- Minimal API endpoints exposed as MCP tools.
-- A live remote OpenAPI demo: Petstore (`https://petstore3.swagger.io/api/v3/openapi.json`) registered as `petstore_*` tools to show external swagger support.
-- An in-app OAuth/OIDC provider (authorize/token/device code) for demonstrating auth flows end to end (enabled by default via `Demo:EnableOAuth` in `appsettings*.json`).
-- A generated `mock-api.json` OpenAPI document to showcase external API bridging when OAuth demo is enabled (ignored by git).
-
-It supports two modes of operation:
-1. **Stdio:** For local integration with clients like **Claude Desktop**.
-2. **HTTP (SSE):** For remote access or multi-client scenarios.
+## What this sample includes:
+-   **Local API Endpoints**: Minimal API endpoints (e.g., `/api/users`, `/api/secrets`) exposed as MCP tools.
+-   **OAuth 2.0 Provider**: An in-app OAuth 2.0 Authorization Server powered by OpenIddict, demonstrating full auth code and client credentials flows.
+-   **Secure Endpoints**: A protected `/api/secrets` endpoint, requiring OAuth 2.0 authorization.
+-   **External OpenAPI Integration**: Integration with the public Petstore API (`https://petstore.swagger.io/v2/swagger.json`), exposing its operations as `petstore_` prefixed MCP tools. Also demonstrates loading from a local file (`sample-api.json`) via `localfile_` tools.
+-   **Protected Resource Metadata**: Exposes the `/.well-known/oauth-protected-resource` endpoint for client discovery.
+-   **Stdio & HTTP Transports**: Supports both Stdio for local desktop integration and HTTP (SSE) for remote access.
 
 ## Prerequisites
 
-- .NET 9.0 SDK
+-   .NET 9.0 SDK
 
 ## Getting Started
 
@@ -22,30 +20,30 @@ It supports two modes of operation:
 
 The default configuration uses `Stdio` transport, which is designed for local tools.
 
-1. **Publish the Project:**
-   Build the project in Release mode to create the executable DLL.
-   ```bash
-   dotnet publish Sample/MCPify.Sample.csproj -c Release
-   ```
+1.  **Publish the Project:**
+    Build the project in Release mode to create the executable DLL.
+    ```bash
+    dotnet publish Sample/MCPify.Sample.csproj -c Release
+    ```
 
-2. **Configure Claude Desktop:**
-   Locate your config file (e.g., `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) and add/update the `mcpServers` entry (replace `<abs-path-to-repo>` with your path):
+2.  **Configure Claude Desktop:**
+    Locate your config file (e.g., `%APPDATA%\Claude\claude_desktop_config.json` on Windows or `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) and add/update the `mcpServers` entry (replace `<abs-path-to-repo>` with your path):
 
-   ```json
-   {
-     "mcpServers": {
-       "mcpify-sample": {
-         "command": "dotnet",
-         "args": [
-           "<abs-path-to-repo>/Sample/bin/Release/net9.0/publish/MCPify.Sample.dll"
-         ]
-       }
-     }
-   }
-   ```
-   *Note: Replace `D:/C/repos/MCPify` with the absolute path to your local `MCPify` repository.*
+    ```json
+    {
+      "mcpServers": {
+        "mcpify-sample": {
+          "command": "dotnet",
+          "args": [
+            "<abs-path-to-repo>/Sample/bin/Release/net9.0/publish/MCPify.Sample.dll"
+          ]
+        }
+      }
+    }
+    ```
+    Replace `<abs-path-to-repo>` with the absolute path to your local `MCPify` repository.
 
-3. **Restart Claude Desktop.** You should see the tools (e.g., `petstore_findPetsByStatus`, `local_api_users_get`, `local_status_get`) available.
+3.  **Restart Claude Desktop.** You should now see the tools (e.g., `petstore_findPetsByStatus`, `api_users_get`, `api_secrets_get`) available.
 
 ---
 
@@ -53,172 +51,50 @@ The default configuration uses `Stdio` transport, which is designed for local to
 
 To run the server in HTTP mode (using Server-Sent Events):
 
-1. **Run with HTTP Flag:**
-   ```bash
-   cd Sample
-   dotnet run --Mcpify:Transport=Http
-   ```
-
-2. **Endpoints:**
-   - **SSE Connection:** `http://localhost:5000/sse`
-   - **Messages:** `http://localhost:5000/messages`
-
-3. **Connect a Client:**
-   Configure your MCP client to connect to the SSE URL above.
-
-   **Example Claude Config for HTTP:**
-   ```json
-   {
-     "mcpServers": {
-       "mcpify-http": {
-         "url": "http://localhost:5000/sse"
-       }
-     }
-   }
-   ```
-
-### Choose your demo level
-
-- **OAuth/OIDC demo (default via appsettings):** No extra flags needed. The mock OAuth provider is on, `mock-api.json` is generated, and `secure_` tools exercise auth code flow end to end.
-- **Simplest (local endpoints only):** Disable the OAuth demo via `--Demo:EnableOAuth=false` (or set in `appsettings*.json`). This skips the mock OAuth provider and `secure_` tools.
-
-## Using MCPify as a NuGet Package
-
-When integrating MCPify into your own ASP.NET Core application as a NuGet package, the setup involves configuring your host application rather than running the `MCPify.Sample` project directly.
-
-### Referencing the Package
-First, add the MCPify NuGet package to your ASP.NET Core project:
-```xml
-<ItemGroup>
-  <PackageReference Include="MCPify" Version="[LatestVersion]" />
-</ItemGroup>
-```
-Or via the command line:
-```bash
-dotnet add package MCPify
-```
-
-### Stdio Integration (for Local Clients like Claude Desktop)
-
-For Stdio transport, Claude Desktop (or any MCP client) will launch *your* application's executable (`.dll`). Your application then uses MCPify internally.
-
-1.  **Configure your `Program.cs`:**
-    Ensure your application's `Program.cs` configures MCPify services and sets the transport to `Stdio`, similar to the `MCPify.Sample` project:
-
-    ```csharp
-    // In your main application's Program.cs
-    var builder = WebApplication.CreateBuilder(args);
-    // ... other services ...
-
-    builder.Services.AddMcpify(options =>
-    {
-        options.Transport = McpTransportType.Stdio; // Set to Stdio
-        // ... configure local endpoints and external APIs as needed ...
-    });
-
-    var app = builder.Build();
-    // ... map your application's endpoints ...
-
-    // Register MCPify tools after your app's endpoints are mapped
-    var registrar = app.Services.GetRequiredService<McpifyServiceRegistrar>();
-    await registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources);
-
-    app.MapMcpifyEndpoint(); // This will enable Stdio transport for MCP
-    app.Run();
+1.  **Run with HTTP Flag:**
+    ```bash
+    cd Sample
+    dotnet run --Mcpify:Transport=Http
     ```
 
-2.  **Configure Claude Desktop:**
-    In your `claude_desktop_config.json`, the `command` and `args` should point to *your application's* published `.dll`:
+2.  **Endpoints:**
+    -   **SSE Connection:** `http://localhost:5005/sse`
+    -   **Messages:** `http://localhost:5005/messages`
+    -   **OAuth Metadata:** `http://localhost:5005/.well-known/oauth-protected-resource`
 
+3.  **Connect a Client:**
+    Configure your MCP client to connect to the SSE URL above.
+
+    **Example Claude Config for HTTP:**
     ```json
     {
       "mcpServers": {
-        "my-app-name": {
-          "command": "dotnet",
-          "args": [
-            "/path/to/YourApp/bin/Release/net9.0/publish/YourApp.dll"
-          ]
+        "mcpify-http": {
+          "url": "http://localhost:5005/sse"
         }
       }
     }
     ```
-    Replace `/path/to/YourApp/bin/Release/net9.0/publish/YourApp.dll` with the actual path to your application's published DLL.
 
-### HTTP Integration (for Remote Clients or Web-based MCP)
+### Interactive OAuth 2.0 Authentication
 
-For HTTP transport, your application will host the MCP endpoints accessible over a network.
+This sample demonstrates how clients can authenticate with MCPify using OAuth 2.0 Authorization Code flow.
 
-1.  **Configure your `Program.cs`:**
-    Set the transport to `Http` and ensure the application runs as a web server:
+1.  **Discover Authentication**: When an unauthenticated client attempts to use a protected tool (e.g., `api_secrets_get`), MCPify will respond with a `401 Unauthorized` HTTP status code and a `WWW-Authenticate` header, including `resource_metadata_url`. The client should then fetch this metadata.
+2.  **Initiate Login**: The client (e.g., Claude Desktop) will call the `login_auth_code_pkce` tool provided by MCPify. This tool returns an authorization URL.
+3.  **User Authorization**: The user opens the authorization URL in a browser, logs in (using the OpenIddict provider in this sample), and grants consent.
+4.  **Callback and Token Exchange**: After user authorization, the browser redirects to MCPify's callback endpoint (`/auth/callback`). MCPify handles the code exchange and stores the token securely for the specific session.
+5.  **Access Protected Tools**: The client can then retry the protected tool invocation. MCPify will use the stored token (or a token provided by the client in the `Authorization` header) to authenticate against the backend API.
 
-    ```csharp
-    // In your main application's Program.cs
-    var builder = WebApplication.CreateBuilder(args);
-    // ... other services ...
+### Relevant configuration knobs
+These can be configured in `appsettings.json` or via command-line arguments.
 
-    builder.Services.AddMcpify(options =>
-    {
-        options.Transport = McpTransportType.Http; // Set to Http
-        // ... configure local endpoints and external APIs as needed ...
-    });
-
-    var app = builder.Build();
-    // ... map your application's endpoints ...
-
-    // Register MCPify tools after your app's endpoints are mapped
-    var registrar = app.Services.GetRequiredService<McpifyServiceRegistrar>();
-    await registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources);
-
-    app.MapMcpifyEndpoint(); // This will map the /sse and /messages HTTP endpoints
-    app.Run(); // Your app will start as a web server
-    ```
-
-2.  **Configure Claude Desktop (or other MCP client):**
-    Point your client to the URL where your application is running and serving the MCP endpoints (e.g., `http://localhost:5000/sse`):
-
-    ```json
-    {
-      "mcpServers": {
-        "my-app-name-http": {
-          "url": "http://localhost:5000/sse"
-        }
-      }
-    }
-    ```
-    Adjust the URL as per your application's configuration.
-
-## Configuration
-
-You can configure the transport and other settings in `appsettings.json` or via command-line arguments.
-
-**appsettings.json:**
-```json
-{
-  "Mcpify": {
-    "Transport": "Stdio", // or "Http"
-    "OpenApiDownloadTimeout": "00:00:45" // 45 seconds (default is 30s)
-  }
-}
-```
-
-**Command Line:**
-```bash
-dotnet run --Mcpify:Transport=Http --Mcpify:OpenApiDownloadTimeout=00:00:45
-```
-
-## Features
-
-- **OpenAPI Bridge:** Automatically converts Swagger/OpenAPI definitions (e.g., Petstore) into MCP Tools.
-- **Local Endpoint Bridge:** Automatically exposes your ASP.NET Core Minimal APIs as MCP Tools.
-- **Transport Agnostic:** Switch between Stdio and HTTP with a simple config change.
-- **Authentication (JWT Bearer)**: The sample includes a JWT Bearer authentication setup.
-  - A secure endpoint `/api/secure` is protected using `.RequireAuthorization()`.
-  - At startup, a demo JWT token is generated and printed to the console.
-  - **MCPify is configured to use this demo token** for all local endpoints by setting `options.LocalEndpoints.Authentication = new BearerAuthentication(demoToken);`.
-  - This means AI agents calling local tools will be automatically authenticated.
+-   `Demo:BaseUrl`: The host/port used by the sample itself (and the auth callback). Defaults to `http://localhost:5005`.
+-   `Demo:OAuthRedirectPath`: Path for the callback handler (default `/auth/callback`).
+-   `Mcpify:Transport`: `Stdio` or `Http`.
+-   `Mcpify:OpenApiDownloadTimeout`: Timeout for downloading OpenAPI specs.
 
 ## Troubleshooting
 
-- **Stdio Issues:** If connecting via Stdio fails, ensure no other output is being written to the console. The application automatically disables logging in Stdio mode to prevent this, but ensure no `Console.WriteLine` calls exist in your own startup code.
-- **Logs:** In Stdio mode, standard logs are suppressed. You can configure file-based logging if debugging is needed.
-- **Generated files:** The sample writes a `mock-api.json` (OpenAPI document) and `demo_token.json` (token cache) to disk; both are ignored by git and can be safely deleted between runs.
+-   **Stdio Issues:** If connecting via Stdio fails, ensure no other output is being written to the console. The application automatically disables logging in Stdio mode to prevent this.
+-   **Logs:** In Stdio mode, standard logs are suppressed. You can configure file-based logging if debugging is needed.

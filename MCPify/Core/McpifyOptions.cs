@@ -33,11 +33,13 @@ public class LocalEndpointsOptions
 
     public string? ToolPrefix { get; set; }
 
+    public string? BaseUrlOverride { get; set; }
+
     public Func<OpenApiOperationDescriptor, bool>? Filter { get; set; }
 
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 
-    public IAuthenticationProvider? Authentication { get; set; }
+    public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
 }
 
 public class ExternalApiOptions
@@ -54,5 +56,5 @@ public class ExternalApiOptions
 
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 
-    public IAuthenticationProvider? Authentication { get; set; }
+    public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
 }

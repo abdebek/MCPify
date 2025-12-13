@@ -3,6 +3,7 @@ using MCPify.Endpoints;
 using MCPify.OpenApi;
 using MCPify.Schema;
 using MCPify.Tools;
+using MCPify.Core.Auth;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Routing;
@@ -21,6 +22,8 @@ public class McpifyServiceRegistrar
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<McpifyServiceRegistrar> _logger;
     private readonly IOpenApiProvider _openApiProvider;
+    private readonly OpenApiOAuthParser _oauthParser;
+    private readonly OAuthConfigurationStore _oauthStore;
 
     public McpifyServiceRegistrar(
         IServiceProvider serviceProvider,
@@ -28,7 +31,9 @@ public class McpifyServiceRegistrar
         IJsonSchemaGenerator schema,
         IHttpClientFactory httpClientFactory,
         ILogger<McpifyServiceRegistrar> logger,
-        IOpenApiProvider openApiProvider)
+        IOpenApiProvider openApiProvider,
+        OpenApiOAuthParser oauthParser,
+        OAuthConfigurationStore oauthStore)
     {
         _serviceProvider = serviceProvider;
         _options = options;
@@ -36,6 +41,8 @@ public class McpifyServiceRegistrar
         _httpClientFactory = httpClientFactory;
         _logger = logger;
         _openApiProvider = openApiProvider;
+        _oauthParser = oauthParser;
+        _oauthStore = oauthStore;
     }
 
     public async Task RegisterToolsAsync(IEnumerable<EndpointDataSource>? endpointDataSources = null)
@@ -78,6 +85,14 @@ public class McpifyServiceRegistrar
             try
             {
                 var document = await _openApiProvider.LoadAsync(source);
+                
+                var oauthConfig = _oauthParser.Parse(document);
+                if (oauthConfig != null)
+                {
+                    _oauthStore.AddConfiguration(oauthConfig);
+                    _logger.LogInformation("[MCPify] Discovered OAuth configuration in {Source}", source);
+                }
+
                 var operations = _openApiProvider.GetOperations(document);
 
                 if (apiOptions.Filter != null)
@@ -112,7 +127,7 @@ public class McpifyServiceRegistrar
                         apiOpts.DefaultHeaders[header.Key] = header.Value;
                     }
 
-                    var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, apiOptions.Authentication);
+                    var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, apiOptions.AuthenticationFactory);
                     toolCollection.Add(tool);
                     count++;
                 }
@@ -151,7 +166,9 @@ public class McpifyServiceRegistrar
         {
             var server = _serviceProvider.GetService<IServer>();
             var addresses = server?.Features.Get<IServerAddressesFeature>()?.Addresses;
-            return addresses?.FirstOrDefault() ?? Constants.DefaultBaseUrl;
+            return _options.LocalEndpoints?.BaseUrlOverride
+                   ?? addresses?.FirstOrDefault()
+                   ?? Constants.DefaultBaseUrl;
         }
 
         var count = 0;
@@ -174,7 +191,7 @@ public class McpifyServiceRegistrar
                 DefaultHeaders = _options.LocalEndpoints.DefaultHeaders
             };
 
-            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, _options.LocalEndpoints.Authentication);
+            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, _options.LocalEndpoints.AuthenticationFactory);
             toolCollection.Add(tool);
             count++;
         }

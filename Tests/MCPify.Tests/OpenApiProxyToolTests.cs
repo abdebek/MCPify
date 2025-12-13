@@ -37,7 +37,7 @@ public class OpenApiProxyToolTests : IAsyncLifetime
             _apiServer.CreateClient(),
             _schema,
             new McpifyOptions(),
-            auth
+            _ => auth
         );
 
         var request = BuildRequest(tool, null);

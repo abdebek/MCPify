@@ -1,120 +1,57 @@
 using MCPify.Core;
-using MCPify.Core.Auth;
-using MCPify.Core.Auth.OAuth;
 using MCPify.Hosting;
 using MCPify.Sample;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+using MCPify.Sample.Extensions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Use a specific port for the sample so we can hardcode URLs reliably in the demo
-builder.WebHost.UseUrls("http://localhost:5005");
-
+// --- Configuration ---
 var transport = builder.Configuration.GetValue<McpTransportType>("Mcpify:Transport", McpTransportType.Stdio);
-var enableOAuthDemo = builder.Configuration.GetValue("Demo:EnableOAuth", false);
-
-// Only clear logging if in Stdio mode and NOT debugging, to avoid corrupting stdout
 if (transport == McpTransportType.Stdio && !args.Contains("--debug"))
 {
     builder.Logging.ClearProviders();
 }
-else
-{
-    builder.Services.AddLogging();
-}
 
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
-    {
-        policy.SetIsOriginAllowed(_ => true).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
-    });
-});
+builder.Services.Configure<DemoOptions>(builder.Configuration.GetSection("Demo"));
+var demoOptions = builder.Configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
 
-// --- JWT Configuration ---
-var jwtKey = "ThisIsASecureKeyForTestingMCPifySamples_123!";
-var jwtIssuer = "mcpify-sample";
-var jwtAudience = "mcpify-client";
+var baseUrl = demoOptions.BaseUrl.TrimEnd('/');
+var oauthRedirectPath = "/auth/callback"; 
+var oauthRedirectUri = $"{baseUrl}{oauthRedirectPath}"; 
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
-        };
-    });
+builder.WebHost.UseUrls(baseUrl);
 
-builder.Services.AddAuthorization();
-builder.Services.AddAntiforgery();
-builder.Services.AddMcpifyTestTool();
+// --- Services ---
+builder.Services.AddDemoDatabaseAndAuth();
+builder.Services.AddDemoSwagger(baseUrl);
+builder.Services.AddDemoMcpify(builder.Configuration, baseUrl, oauthRedirectUri);
 
-builder.Services.AddMcpify(options =>
-{
-    options.Transport = transport;
-
-    // 1. Local Endpoints (Minimal APIs)
-    options.LocalEndpoints = new()
-    {
-        Enabled = true,
-        ToolPrefix = "local_",
-        Filter = descriptor =>
-            !descriptor.Route.StartsWith("/mock-auth") &&
-            !descriptor.Route.StartsWith("/mock-api")
-    };
-
-    // 2. Public Petstore API (remote OpenAPI demo)
-    options.ExternalApis.Add(new()
-    {
-        SwaggerUrl = "https://petstore3.swagger.io/api/v3/openapi.json",
-        ApiBaseUrl = "https://petstore3.swagger.io/api/v3",
-        ToolPrefix = "petstore_"
-    });
-
-    // 2. Mock Secure API (Demonstrates OAuth2 Flow) - opt-in
-    if (enableOAuthDemo)
-    {
-        options.AddOAuthDemo("mock-api.json", "http://localhost:5005");
-    }
-});
+builder.Services.AddHostedService<Worker>();
+builder.Services.AddControllers();
 
 var app = builder.Build();
 
+// --- Pipeline ---
 app.UseCors("AllowAll");
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
+app.UseMcpifyContext();
+app.UseMcpifyOAuth();
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseAntiforgery();
 
-// --- Mock API Endpoints ---
-app.MapGet("/mock-api/secrets", (ClaimsPrincipal user) => 
-    new { Secret = "The Golden Eagle flies at midnight.", Viewer = user.Identity?.Name ?? "Anonymous" })
-   .RequireAuthorization();
+app.MapDemoEndpoints(oauthRedirectPath);
 
-if (enableOAuthDemo)
-{
-    app.MapOAuthDemoEndpoints(jwtIssuer, jwtAudience, jwtKey);
-}
-
-app.MapGet("/api/users/{id}", (int id) => new { Id = id, Name = $"User {id}" });
-app.MapGet("/status", () => "MCPify Sample is Running");
-
-// Register MCPify tools
-var registrar = app.Services.GetRequiredService<McpifyServiceRegistrar>();
-await registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources);
+await app.RegisterDemoMcpToolsAsync();
 
 app.MapMcpifyEndpoint();
 
 app.Run();
-
-public record UserRequest(string Name, string Email);

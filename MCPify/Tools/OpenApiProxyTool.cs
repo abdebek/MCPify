@@ -7,7 +7,9 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace MCPify.Tools;
 
@@ -18,7 +20,7 @@ public class OpenApiProxyTool : McpServerTool
     private readonly Func<string> _apiBaseUrlProvider;
     private readonly OpenApiOperationDescriptor _descriptor;
     private readonly McpifyOptions _options;
-    private readonly IAuthenticationProvider? _authentication;
+    private readonly Func<IServiceProvider, IAuthenticationProvider>? _authenticationFactory;
 
     public OpenApiProxyTool(
         OpenApiOperationDescriptor descriptor,
@@ -26,8 +28,8 @@ public class OpenApiProxyTool : McpServerTool
         HttpClient http,
         IJsonSchemaGenerator schema,
         McpifyOptions options,
-        IAuthenticationProvider? authentication = null)
-        : this(descriptor, () => apiBaseUrl, http, schema, options, authentication)
+        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
+        : this(descriptor, () => apiBaseUrl, http, schema, options, authenticationFactory)
     {
     }
 
@@ -37,21 +39,21 @@ public class OpenApiProxyTool : McpServerTool
         HttpClient http,
         IJsonSchemaGenerator schema,
         McpifyOptions options,
-        IAuthenticationProvider? authentication = null)
+        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
     {
         _descriptor = descriptor;
         _apiBaseUrlProvider = apiBaseUrlProvider;
         _http = http;
         _schema = schema;
         _options = options;
-        _authentication = authentication;
+        _authenticationFactory = authenticationFactory;
     }
 
     public override Tool ProtocolTool => new()
     {
         Name = _descriptor.Name,
         Description = _descriptor.Operation.Summary ?? $"Invoke {_descriptor.Method} {_descriptor.Route}",
-        InputSchema = (JsonElement)JsonSerializer.SerializeToElement(_schema.GenerateInputSchema(_descriptor.Operation))
+        InputSchema = BuildInputSchema()
     };
 
     public override IReadOnlyList<object> Metadata => Array.Empty<object>();
@@ -64,25 +66,12 @@ public class OpenApiProxyTool : McpServerTool
             ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(context.Params.Arguments))
             : new Dictionary<string, JsonElement>();
 
-        if (_authentication is OAuthAuthorizationCodeAuthentication sessionAware &&
-            argsDict != null &&
-            argsDict.TryGetValue("sessionId", out var sessionIdElement) &&
-            sessionIdElement.ValueKind == JsonValueKind.String)
-        {
-            var sessionId = sessionIdElement.GetString();
-            if (!string.IsNullOrEmpty(sessionId))
-            {
-                sessionAware.SetSession(sessionId);
-            }
-
-            argsDict.Remove("sessionId");
-        }
-
         var request = BuildHttpRequest(argsDict);
 
-        if (_authentication != null)
+        if (_authenticationFactory != null)
         {
-            await _authentication.ApplyAsync(request, token);
+            var authentication = _authenticationFactory.Invoke(context.Services!);
+            await authentication.ApplyAsync(request, token);
         }
 
         var response = await _http.SendAsync(request, token);
@@ -110,6 +99,12 @@ public class OpenApiProxyTool : McpServerTool
         {
             Content = new[] { new TextContentBlock { Text = content } }
         };
+    }
+
+    private JsonElement BuildInputSchema()
+    {
+        var schemaNode = JsonSerializer.SerializeToNode(_schema.GenerateInputSchema(_descriptor.Operation)) ?? new JsonObject();
+        return JsonSerializer.SerializeToElement(schemaNode);
     }
 
     private HttpRequestMessage BuildHttpRequest(Dictionary<string, JsonElement>? argsDict)

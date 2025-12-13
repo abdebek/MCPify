@@ -1,5 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using MCPify.Core;
+using MCPify.Core.Auth;
 
 namespace MCPify.Core.Auth.OAuth;
 
@@ -9,31 +11,35 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
     private readonly string _clientSecret;
     private readonly string _tokenEndpoint;
     private readonly string _scope;
-    private readonly ITokenStore _tokenStore;
+    private readonly ISecureTokenStore _secureTokenStore;
+    private readonly IMcpContextAccessor _mcpContextAccessor;
     private readonly HttpClient _httpClient;
-    private readonly ISessionTokenStore? _sessionTokenStore;
+    private const string _clientCredentialsProviderName = "ClientCredentials";
 
     public ClientCredentialsAuthentication(
         string clientId,
         string clientSecret,
         string tokenEndpoint,
         string scope,
-        ITokenStore tokenStore,
+        ISecureTokenStore secureTokenStore,
+        IMcpContextAccessor mcpContextAccessor,
         HttpClient? httpClient = null)
     {
         _clientId = clientId;
         _clientSecret = clientSecret;
         _tokenEndpoint = tokenEndpoint;
         _scope = scope;
-        _tokenStore = tokenStore;
+        _secureTokenStore = secureTokenStore;
+        _mcpContextAccessor = mcpContextAccessor;
         _httpClient = httpClient ?? new HttpClient();
-        _sessionTokenStore = tokenStore as ISessionTokenStore;
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        // If a session is set by caller, it's already applied via SetSession.
-        var tokenData = await _tokenStore.GetTokenAsync(cancellationToken);
+        var sessionId = _mcpContextAccessor.SessionId
+            ?? throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
+
+        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _clientCredentialsProviderName, cancellationToken);
 
         if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
         {
@@ -42,7 +48,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         }
 
         tokenData = await RequestTokenAsync(cancellationToken);
-        await _tokenStore.SaveTokenAsync(tokenData, cancellationToken);
+        await _secureTokenStore.SaveTokenAsync(sessionId, _clientCredentialsProviderName, tokenData, cancellationToken);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
     }
 
@@ -72,10 +78,5 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
             : null;
 
         return new TokenData(accessToken, null, expiresAt);
-    }
-
-    public void SetSession(string sessionId)
-    {
-        _sessionTokenStore?.SetSession(sessionId);
     }
 }

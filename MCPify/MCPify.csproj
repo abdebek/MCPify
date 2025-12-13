@@ -31,6 +31,7 @@
     <PackageReference Include="ModelContextProtocol" Version="*-*" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="*-*" />
     <PackageReference Include="Microsoft.OpenApi.Readers" Version="*" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

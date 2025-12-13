@@ -6,6 +6,10 @@ using MCPify.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using System.Net.Http;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using MCPify.Core.Auth;
+using System.IO;
 
 namespace MCPify.Hosting;
 
@@ -57,6 +61,25 @@ public static class McpifyServiceExtensions
 
         services.AddSingleton<IEndpointMetadataProvider, AspNetCoreEndpointMetadataProvider>();
 
+        // Register IMcpContextAccessor and its concrete implementation
+        services.AddScoped<IMcpContextAccessor, McpContextAccessor>();
+
+        // Register ISecureTokenStore
+        services.AddSingleton<ISecureTokenStore>(sp =>
+        {
+            var env = sp.GetRequiredService<IWebHostEnvironment>();
+            var basePath = Path.Combine(env.ContentRootPath, "AuthTokens");
+            // Ensure the directory exists
+            if (!Directory.Exists(basePath))
+            {
+                Directory.CreateDirectory(basePath);
+            }
+            return new EncryptedFileTokenStore(basePath);
+        });
+
+        services.AddSingleton<OpenApiOAuthParser>();
+        services.AddSingleton<OAuthConfigurationStore>();
+
         return services;
     }
 
@@ -83,5 +106,16 @@ public static class McpifyServiceExtensions
     {
         services.AddSingleton<McpServerTool, SimpleMathTool>();
         return services;
+    }
+
+    // New extension method for adding McpContextMiddleware
+    public static IApplicationBuilder UseMcpifyContext(this IApplicationBuilder builder)
+    {
+        return builder.UseMiddleware<McpContextMiddleware>();
+    }
+
+    public static IApplicationBuilder UseMcpifyOAuth(this IApplicationBuilder builder)
+    {
+        return builder.UseMiddleware<McpOAuthAuthenticationMiddleware>();
     }
 }

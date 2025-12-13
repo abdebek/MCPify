@@ -16,6 +16,7 @@ public class DeviceCodeAuthenticationTests : IAsyncLifetime
     public async Task ApplyAsync_PerformDeviceFlow_WhenNoToken()
     {
         var store = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor();
         string? promptedUrl = null;
         string? promptedCode = null;
 
@@ -25,6 +26,7 @@ public class DeviceCodeAuthenticationTests : IAsyncLifetime
             _oauthServer.TokenEndpoint,
             "scope",
             store,
+            accessor,
             (url, code) =>
             {
                 promptedUrl = url;
@@ -44,7 +46,7 @@ public class DeviceCodeAuthenticationTests : IAsyncLifetime
         Assert.NotNull(promptedCode);
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
 
-        var saved = await store.GetTokenAsync();
+        var saved = await store.GetTokenAsync("test-session", "DeviceCode");
         Assert.NotNull(saved);
         Assert.Equal(saved!.AccessToken, request.Headers.Authorization?.Parameter);
     }

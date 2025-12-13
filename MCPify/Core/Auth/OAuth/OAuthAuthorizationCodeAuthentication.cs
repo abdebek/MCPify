@@ -7,6 +7,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Web;
+using MCPify.Core;
+using MCPify.Core.Auth;
 
 namespace MCPify.Core.Auth.OAuth;
 
@@ -17,27 +19,24 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly string _authorizationEndpoint;
     private readonly string _tokenEndpoint;
     private readonly string _scope;
-    private readonly ITokenStore _tokenStore;
+    private readonly ISecureTokenStore _secureTokenStore;
+    private readonly IMcpContextAccessor _mcpContextAccessor;
     private readonly HttpClient _httpClient;
-    private readonly string _callbackPath;
     private readonly string? _redirectUri;
-    private readonly string _callbackHost;
     private readonly Action<string>? _openBrowserAction;
     private readonly bool _usePkce;
     private readonly Action<string>? _authorizationUrlEmitter;
-    private readonly ISessionTokenStore? _sessionStore;
 
     public OAuthAuthorizationCodeAuthentication(
         string clientId,
         string authorizationEndpoint,
         string tokenEndpoint,
         string scope,
-        ITokenStore tokenStore,
+        ISecureTokenStore secureTokenStore,
+        IMcpContextAccessor mcpContextAccessor,
         string? clientSecret = null,
         HttpClient? httpClient = null,
-        string callbackPath = "/callback",
         string? redirectUri = null,
-        string callbackHost = "localhost",
         Action<string>? openBrowserAction = null,
         bool usePkce = false,
         Action<string>? authorizationUrlEmitter = null)
@@ -46,35 +45,56 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _authorizationEndpoint = authorizationEndpoint;
         _tokenEndpoint = tokenEndpoint;
         _scope = scope;
-        _tokenStore = tokenStore;
+        _secureTokenStore = secureTokenStore;
+        _mcpContextAccessor = mcpContextAccessor;
         _clientSecret = clientSecret;
         _httpClient = httpClient ?? new HttpClient();
-        _callbackPath = callbackPath;
         _redirectUri = redirectUri;
-        _callbackHost = callbackHost;
         _openBrowserAction = openBrowserAction;
         _usePkce = usePkce;
         _authorizationUrlEmitter = authorizationUrlEmitter;
-        _sessionStore = tokenStore as ISessionTokenStore;
     }
 
-    public void SetSession(string sessionId)
+    public string BuildAuthorizationUrl(string sessionId)
     {
-        if (_sessionStore == null)
+        var redirectUri = _redirectUri ?? throw new InvalidOperationException("redirectUri must be configured for auth URL generation.");
+
+        var state = CreateSignedState(sessionId, redirectUri, out var nonce);
+
+        (string CodeVerifier, string CodeChallenge)? pkce = null;
+        if (_usePkce)
         {
-            throw new InvalidOperationException("Session token store is required for session-scoped authentication.");
+            pkce = GeneratePkcePair();
+            _secureTokenStore.SaveTokenAsync(sessionId, _pkceStorePrefix + nonce, new TokenData(pkce.Value.CodeVerifier, null, null), CancellationToken.None).GetAwaiter().GetResult();
         }
-        _sessionStore.SetSession(sessionId);
+        
+        var query = HttpUtility.ParseQueryString("");
+        query["response_type"] = "code";
+        query["client_id"] = _clientId;
+        query["redirect_uri"] = redirectUri;
+        query["scope"] = _scope;
+        query["state"] = state;
+        if (_usePkce && pkce.HasValue)
+        {
+            query["code_challenge"] = pkce.Value.CodeChallenge;
+            query["code_challenge_method"] = "S256";
+        }
+
+        return $"{_authorizationEndpoint}?{query}";
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        if (_sessionStore != null && _sessionStore.GetCurrentSession() == null)
+        if (!string.IsNullOrEmpty(_mcpContextAccessor.AccessToken))
         {
-            throw new InvalidOperationException("SessionId not set. Provide a sessionId for this call.");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _mcpContextAccessor.AccessToken);
+            return;
         }
 
-        var tokenData = await _tokenStore.GetTokenAsync(cancellationToken);
+        var sessionId = _mcpContextAccessor.SessionId
+            ?? throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
+
+        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _oauthProviderName, cancellationToken);
 
         if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
         {
@@ -86,116 +106,48 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         {
             try
             {
-                tokenData = await RefreshTokenAsync(tokenData.RefreshToken, cancellationToken);
-                await _tokenStore.SaveTokenAsync(tokenData, cancellationToken);
+                tokenData = await RefreshTokenAsync(tokenData.RefreshToken, sessionId, cancellationToken);
+                await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 return;
             }
-            catch
+            catch (Exception ex)
             {
-                // Refresh failed, fall back to full login
+                Console.Error.WriteLine($"Token refresh failed for session {sessionId}: {ex.Message}");
+                await _secureTokenStore.DeleteTokenAsync(sessionId, _oauthProviderName, cancellationToken);
             }
         }
 
-        // Full Login
-        tokenData = await PerformLoginAsync(cancellationToken);
-        await _tokenStore.SaveTokenAsync(tokenData, cancellationToken);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
+        throw new InvalidOperationException($"No valid token found or refresh failed for session '{sessionId}'. Run the login tool to authenticate first.");
     }
 
-    private async Task<TokenData> PerformLoginAsync(CancellationToken cancellationToken)
+    public async Task<TokenData> HandleAuthorizationCallbackAsync(string code, string stateParam, CancellationToken cancellationToken = default)
     {
-        (string CodeVerifier, string CodeChallenge)? pkce = _usePkce ? GeneratePkcePair() : null;
+        var oauthState = ValidateAndExtractSignedState(stateParam);
+        var sessionId = oauthState.SessionId!;
+        var nonce = oauthState.Nonce!;
+        var redirectUri = oauthState.RedirectUri!;
 
-        try
+        _mcpContextAccessor.SessionId = sessionId; 
+
+        string? codeVerifier = null;
+        if (_usePkce)
         {
-            string redirectUri;
-            if (!string.IsNullOrEmpty(_redirectUri))
-            {
-                redirectUri = _redirectUri;
-            }
-            else
-            {
-                var port = GetRandomUnusedPort();
-                redirectUri = $"http://{_callbackHost}:{port}{_callbackPath}";
-            }
-
-            using var listener = new HttpListener();
-            listener.Prefixes.Add(redirectUri.EndsWith("/") ? redirectUri : redirectUri + "/");
-            listener.Start();
-
-            var state = Guid.NewGuid().ToString();
-
-            var query = HttpUtility.ParseQueryString("");
-            query["response_type"] = "code";
-            query["client_id"] = _clientId;
-            query["redirect_uri"] = redirectUri;
-            query["scope"] = _scope;
-            query["state"] = state;
-            if (_usePkce && pkce.HasValue)
-            {
-                query["code_challenge"] = pkce.Value.CodeChallenge;
-                query["code_challenge_method"] = "S256";
-            }
-            
-            var authUrl = $"{_authorizationEndpoint}?{query}";
-            
-            _authorizationUrlEmitter?.Invoke(authUrl);
-            _openBrowserAction?.Invoke(authUrl);
-            if (_authorizationUrlEmitter == null && _openBrowserAction == null)
-            {
-                OpenBrowser(authUrl);
-            }
-
-            try
-            {
-                var contextTask = listener.GetContextAsync();
-                // Simple cancellation support
-                using var reg = cancellationToken.Register(() => listener.Stop());
-
-                var context = await contextTask;
-
-                var req = context.Request;
-                var res = context.Response;
-
-                var returnedState = req.QueryString["state"];
-                var code = req.QueryString["code"];
-                var error = req.QueryString["error"];
-
-                if (!string.IsNullOrEmpty(error))
-                {
-                    await SendResponseAsync(res, $"<html><body><h1>Login Failed</h1><p>{WebUtility.HtmlEncode(error)}</p></body></html>", cancellationToken);
-                    throw new Exception($"OAuth Error: {error}");
-                }
-
-                if (returnedState != state || string.IsNullOrEmpty(code))
-                {
-                    await SendResponseAsync(res, "<html><body><h1>Login Failed</h1><p>Invalid state or missing code.</p></body></html>", cancellationToken);
-                    throw new Exception("Invalid state or missing code.");
-                }
-
-                await SendResponseAsync(res, "<html><body><h1>Login Successful</h1><p>You can close this window and return to the application.</p><script>window.close();</script></body></html>", cancellationToken);
-
-                return await ExchangeCodeForTokenAsync(code, redirectUri, pkce?.CodeVerifier, cancellationToken);
-            }
-            catch (HttpListenerException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw new TaskCanceledException();
-            }
+            var pkceTokenData = await _secureTokenStore.GetTokenAsync(sessionId, _pkceStorePrefix + nonce, cancellationToken)
+                ?? throw new InvalidOperationException($"PKCE verifier not found for session '{sessionId}' and nonce '{nonce}'. Login process invalid or expired.");
+            codeVerifier = pkceTokenData.AccessToken;
         }
-        catch (Exception ex)
+
+        var tokenData = await ExchangeCodeForTokenAsync(code, redirectUri, codeVerifier, cancellationToken);
+        
+        await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+
+        if (_usePkce)
         {
-            File.AppendAllText("oauth_error.log", $"{DateTime.Now}: {ex}\n");
-            throw;
+            await _secureTokenStore.DeleteTokenAsync(sessionId, _pkceStorePrefix + nonce, cancellationToken);
         }
-    }
 
-    private async Task SendResponseAsync(HttpListenerResponse response, string content, CancellationToken token)
-    {
-        var buffer = Encoding.UTF8.GetBytes(content);
-        response.ContentLength64 = buffer.Length;
-        await response.OutputStream.WriteAsync(buffer, token);
-        response.OutputStream.Close();
+        return tokenData;
     }
 
     private async Task<TokenData> ExchangeCodeForTokenAsync(string code, string redirectUri, string? codeVerifier, CancellationToken cancellationToken)
@@ -239,7 +191,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         return new TokenData(accessToken, refreshToken, expiresAt);
     }
 
-    private async Task<TokenData> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
+    private async Task<TokenData> RefreshTokenAsync(string refreshToken, string sessionId, CancellationToken cancellationToken)
     {
         var form = new Dictionary<string, string>
         {
@@ -274,14 +226,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         return new TokenData(accessToken, newRefreshToken, expiresAt);
     }
 
-    private int GetRandomUnusedPort()
-    {
-        var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        listener.Stop();
-        return port;
-    }
 
     private static (string CodeVerifier, string CodeChallenge) GeneratePkcePair()
     {
@@ -324,5 +268,89 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
                 Process.Start("open", url);
             }
         }
+    }
+
+    private readonly string _stateSecret = "A_VERY_LONG_AND_SECURE_SECRET_KEY_FOR_HMAC_SIGNING"; 
+    private const string _oauthProviderName = "OAuth";
+    private const string _pkceStorePrefix = "pkce_";
+
+    private string CreateSignedState(string sessionId, string redirectUri, out string nonce)
+    {
+        nonce = Guid.NewGuid().ToString("N");
+        var oauthState = new OAuthState
+        {
+            Nonce = nonce,
+            SessionId = sessionId,
+            RedirectUri = redirectUri,
+            ProviderName = _oauthProviderName
+        };
+
+        var jsonState = JsonSerializer.Serialize(oauthState);
+        var signature = SignData(jsonState, _stateSecret);
+
+        return $"{Base64UrlEncode(Encoding.UTF8.GetBytes(jsonState))}.{Base64UrlEncode(signature)}";
+    }
+
+    private OAuthState ValidateAndExtractSignedState(string signedState)
+    {
+        var parts = signedState.Split('.');
+        if (parts.Length != 2)
+        {
+            throw new CryptographicException("Invalid signed state format.");
+        }
+
+        var jsonStateBytes = Base64UrlDecode(parts[0]);
+        var signature = Base64UrlDecode(parts[1]);
+
+        var jsonState = Encoding.UTF8.GetString(jsonStateBytes);
+
+        if (!VerifySignature(jsonState, signature, _stateSecret))
+        {
+            throw new CryptographicException("Invalid state signature.");
+        }
+
+        var oauthState = JsonSerializer.Deserialize<OAuthState>(jsonState)
+            ?? throw new CryptographicException("Failed to deserialize OAuth state.");
+
+        if (string.IsNullOrEmpty(oauthState.SessionId) || string.IsNullOrEmpty(oauthState.Nonce))
+        {
+            throw new CryptographicException("OAuth state missing required fields.");
+        }
+
+        return oauthState;
+    }
+
+    private static byte[] SignData(string data, string key)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
+        return hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+    }
+
+    private static bool VerifySignature(string data, byte[] signature, string key)
+    {
+        using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(key));
+        var computedSignature = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
+        return CryptographicOperations.FixedTimeEquals(computedSignature, signature);
+    }
+
+    private static byte[] Base64UrlDecode(string input)
+    {
+        var output = input.Replace('-', '+').Replace('_', '/');
+        switch (output.Length % 4)
+        {
+            case 0: break;
+            case 2: output += "=="; break;
+            case 3: output += "="; break;
+            default: throw new FormatException("Illegal base64url string!");
+        }
+        return Convert.FromBase64String(output);
+    }
+
+    private class OAuthState
+    {
+        public string? Nonce { get; set; }
+        public string? SessionId { get; set; }
+        public string? RedirectUri { get; set; }
+        public string? ProviderName { get; set; }
     }
 }

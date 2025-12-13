@@ -15,7 +15,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     public async Task ApplyAsync_UsesExistingValidToken()
     {
         var store = new InMemoryTokenStore();
-        await store.SaveTokenAsync(new TokenData("valid_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
+        var accessor = new MockMcpContextAccessor();
+        await store.SaveTokenAsync("test-session", "OAuth", new TokenData("valid_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -23,8 +24,9 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             _oauthServer.TokenEndpoint,
             "scope",
             store,
+            accessor,
             httpClient: _oauthServer.CreateClient(),
-            callbackPath: "/callback");
+            redirectUri: "http://localhost/callback");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -38,7 +40,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     public async Task ApplyAsync_RefreshesExpiredToken()
     {
         var store = new InMemoryTokenStore();
-        await store.SaveTokenAsync(new TokenData("expired_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(-10)));
+        var accessor = new MockMcpContextAccessor();
+        await store.SaveTokenAsync("test-session", "OAuth", new TokenData("expired_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(-10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -46,8 +49,9 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             _oauthServer.TokenEndpoint,
             "scope",
             store,
+            accessor,
             httpClient: _oauthServer.CreateClient(),
-            callbackPath: "/callback");
+            redirectUri: "http://localhost/callback");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -56,7 +60,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
         Assert.NotEqual("expired_token", request.Headers.Authorization?.Parameter);
 
-        var saved = await store.GetTokenAsync();
+        var saved = await store.GetTokenAsync("test-session", "OAuth");
         Assert.NotNull(saved);
         Assert.Equal(request.Headers.Authorization?.Parameter, saved!.AccessToken);
     }
