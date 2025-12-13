@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -30,6 +30,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\MCPify\MCPify.csproj" />
     <ProjectReference Include="..\..\Sample\MCPify.Sample.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\.temp\bank-openapi.json" Link="bank-openapi.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
