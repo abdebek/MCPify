@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
+using OpenIddict.Validation.AspNetCore;
 
 namespace MCPify.Sample.Extensions;
 
@@ -45,7 +46,8 @@ public static class DemoServiceExtensions
 
                 options.UseAspNetCore()
                        .EnableAuthorizationEndpointPassthrough()
-                       .EnableTokenEndpointPassthrough();
+                       .EnableTokenEndpointPassthrough()
+                       .DisableTransportSecurityRequirement();
             })
             .AddValidation(options =>
             {
@@ -53,11 +55,25 @@ public static class DemoServiceExtensions
                 options.UseAspNetCore();
             });
 
+        services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
+        });
+
         services.AddAuthorization();
         
-        return services;
-    }
-
+        services.AddCors(options =>                {
+                    options.AddPolicy("AllowAll", builder =>
+                    {
+                        builder.AllowAnyOrigin()
+                               .AllowAnyMethod()
+                               .AllowAnyHeader();
+                    });
+                });
+                
+                return services;
+            }
     public static IServiceCollection AddDemoSwagger(this IServiceCollection services, string baseUrl)
     {
         services.AddEndpointsApiExplorer();
@@ -98,6 +114,8 @@ public static class DemoServiceExtensions
     public static IServiceCollection AddDemoMcpify(this IServiceCollection services, IConfiguration configuration, string baseUrl, string oauthRedirectUri)
     {
         var transport = configuration.GetValue<McpTransportType>("Mcpify:Transport", McpTransportType.Stdio);
+        var demoOptions = configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
+        var allowFallback = transport == McpTransportType.Stdio;
 
         // Register OAuth Provider
         services.AddScoped<OAuthAuthorizationCodeAuthentication>(sp => {
@@ -112,7 +130,9 @@ public static class DemoServiceExtensions
                 mcpContextAccessor: mcpContextAccessor,
                 clientSecret: "demo-client-secret",
                 usePkce: true,
-                redirectUri: oauthRedirectUri);
+                redirectUri: oauthRedirectUri,
+                stateSecret: demoOptions.StateSecret,
+                allowDefaultSessionFallback: allowFallback);
         });
 
         services.AddLoginTool(sp => new LoginTool());

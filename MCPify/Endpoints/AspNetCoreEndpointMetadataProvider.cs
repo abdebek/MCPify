@@ -1,4 +1,5 @@
 using MCPify.Core;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -95,6 +96,23 @@ public class AspNetCoreEndpointMetadataProvider : IEndpointMetadataProvider
             Summary = routeEndpoint.DisplayName ?? "Endpoint",
             Parameters = new List<OpenApiParameter>()
         };
+
+        if (routeEndpoint.Metadata.GetMetadata<IAuthorizeData>() != null)
+        {
+            operation.Security = new List<OpenApiSecurityRequirement>
+            {
+                new OpenApiSecurityRequirement
+                {
+                    {
+                        new OpenApiSecurityScheme
+                        {
+                            Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "default" }
+                        },
+                        new List<string>()
+                    }
+                }
+            };
+        }
 
         foreach (var parameter in routeEndpoint.RoutePattern.Parameters)
         {

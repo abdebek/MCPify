@@ -8,6 +8,7 @@ public static class Constants
     }
 
     public const string DefaultBaseUrl = "http://localhost:5000";
+    public const string DefaultSessionId = "default";
 
     public static class OpenApiTypes
     {

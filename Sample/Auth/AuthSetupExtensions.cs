@@ -4,6 +4,7 @@ using MCPify.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.AspNetCore.Http;
 using ModelContextProtocol.Server;
+using Microsoft.Extensions.Hosting;
 
 namespace MCPify.Sample.Auth;
 
@@ -54,7 +55,16 @@ public static class AuthSetupExtensions
                 catch (Exception ex)
                 {
                     context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    await context.Response.WriteAsync($"Auth exchange failed: {ex.Message}");
+
+                    if (app.Environment.IsDevelopment())
+                    {
+                        var stateDebug = state.Length > 10 ? state.Substring(0, 5) + "..." + state.Substring(state.Length - 5) : state;
+                        await context.Response.WriteAsync($"Auth exchange failed: {ex.Message}. State: {stateDebug} (Len: {state.Length})");
+                    }
+                    else
+                    {
+                        await context.Response.WriteAsync("Auth exchange failed. Please check server logs.");
+                    }
                 }
             });
         }

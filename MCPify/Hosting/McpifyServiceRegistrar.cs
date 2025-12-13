@@ -191,7 +191,11 @@ public class McpifyServiceRegistrar
                 DefaultHeaders = _options.LocalEndpoints.DefaultHeaders
             };
 
-            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, _options.LocalEndpoints.AuthenticationFactory);
+            var effectiveAuthFactory = (descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0)
+                ? _options.LocalEndpoints.AuthenticationFactory
+                : null;
+
+            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, effectiveAuthFactory);
             toolCollection.Add(tool);
             count++;
         }

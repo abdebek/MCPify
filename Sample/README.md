@@ -96,5 +96,8 @@ These can be configured in `appsettings.json` or via command-line arguments.
 
 ## Troubleshooting
 
+-   **"Waiting for server to respond to initialize request..."**: This usually means you are using `dotnet run` in your MCP client configuration (e.g., VSCode/Claude). `dotnet run` emits build logs ("Building...", "Now listening...") to standard output, which corrupts the JSON-RPC protocol used by Stdio transport.
+    -   **Fix:** Point your client command to the **published DLL** (e.g., `dotnet Slampe/bin/Release/net9.0/publish/MCPify.Sample.dll`) instead of using `dotnet run`. Ensure you have published the project first (`dotnet publish -c Release`).
+
 -   **Stdio Issues:** If connecting via Stdio fails, ensure no other output is being written to the console. The application automatically disables logging in Stdio mode to prevent this.
 -   **Logs:** In Stdio mode, standard logs are suppressed. You can configure file-based logging if debugging is needed.
