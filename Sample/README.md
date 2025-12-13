@@ -86,6 +86,42 @@ This sample demonstrates how clients can authenticate with MCPify using OAuth 2.
 4.  **Callback and Token Exchange**: After user authorization, the browser redirects to MCPify's callback endpoint (`/auth/callback`). MCPify handles the code exchange and stores the token securely for the specific session.
 5.  **Access Protected Tools**: The client can then retry the protected tool invocation. MCPify will use the stored token (or a token provided by the client in the `Authorization` header) to authenticate against the backend API.
 
+### Service-to-Service (Client Credentials)
+The in-app OpenIddict server already allows the Client Credentials grant. To try it:
+
+1. Swap the authentication factory in `AddDemoMcpify` to use `ClientCredentialsAuthentication` (sample credentials shown below):
+    ```csharp
+    AuthenticationFactory = sp => new ClientCredentialsAuthentication(
+        clientId: "demo-client-id",
+        clientSecret: "demo-client-secret",
+        tokenEndpoint: $"{baseUrl}/connect/token",
+        scope: "read_secrets",
+        secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
+        mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>()
+    );
+    ```
+2. Publish/run the sample, then call any `api_` tool. MCPify will fetch and cache a bearer token per MCP session and reuse it until near expiry.
+
+### Device Code Flow (optional)
+MCPify supports device code via `DeviceCodeAuthentication`. To experiment with it in the sample:
+- Enable device code in OpenIddict (add `.AllowDeviceCodeFlow()` in `AddDemoDatabaseAndAuth`).
+- Swap the auth factory to `DeviceCodeAuthentication` (provide the same `connect/token` endpoints and a user prompt callback).
+- When a protected tool is called, MCPify will return a verification URL + user code; authorize on another device, then rerun the tool to use the cached token.
+
+### Simple Tokens (API Key / Bearer / Basic)
+For quick demos or internal endpoints, wire static credentials instead of OAuth:
+```csharp
+AuthenticationFactory = sp => new ApiKeyAuthentication("X-API-Key", "secret", ApiKeyLocation.Header);
+// or
+AuthenticationFactory = sp => new BearerAuthentication("hard-coded-token");
+// or
+AuthenticationFactory = sp => new BasicAuthentication("user", "password");
+```
+Attach these either to `options.LocalEndpoints.AuthenticationFactory` or to a specific `ExternalApiOptions.AuthenticationFactory`.
+
+### Pass-through Bearer Tokens
+If your MCP client already sends `Authorization: Bearer <token>` to the sample, MCPify will forward that token via `IMcpContextAccessor.AccessToken` instead of using stored OAuth/client-credentials tokens.
+
 ### Relevant configuration knobs
 These can be configured in `appsettings.json` or via command-line arguments.
 

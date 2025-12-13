@@ -190,9 +190,23 @@ AuthenticationFactory = sp => new DeviceCodeAuthentication(
     userPrompt: (verificationUri, userCode) => 
     {
         Console.WriteLine($"Please visit {verificationUri} and enter code: {userCode}");
-        return Task.CompletedTask;
-    }
+    return Task.CompletedTask;
+}
 )
+```
+
+#### OAuth 2.0 Client Credentials (Service-to-Service)
+Use when no user is present and you just need an app token. Tokens are stored per MCP session using `ISecureTokenStore` to avoid re-fetching on every call.
+
+```csharp
+AuthenticationFactory = sp => new ClientCredentialsAuthentication(
+    clientId: "service-client-id",
+    clientSecret: "service-secret",
+    tokenEndpoint: "https://auth.example.com/token",
+    scope: "read write",
+    secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
+    mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>()
+);
 ```
 
 #### Secure Token Storage (`ISecureTokenStore`)
@@ -213,6 +227,7 @@ new BearerAuthentication("access-token")
 // Basic Auth
 new BasicAuthentication("username", "password")
 ```
+These are easiest to wire for testing or internal services; you can also set `AuthenticationFactory` per external API or local endpoint group to plug them in.
 
 ## Tests
 
