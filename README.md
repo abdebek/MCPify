@@ -211,7 +211,7 @@ AuthenticationFactory = sp => new ClientCredentialsAuthentication(
 ```
 
 #### Secure Token Storage (`ISecureTokenStore`)
-MCPify provides `EncryptedFileTokenStore` for secure, file-based persistence of authentication tokens. This is automatically registered when you call `builder.Services.AddMcpify()`.
+MCPify provides `EncryptedFileTokenStore` for secure, file-based persistence of authentication tokens. On Windows, it uses DPAPI. On other platforms, it falls back to AES encryption with a key derived from `MCPIFY_TOKENSTORE_KEY` (if set), a generated per-installation key file, or an optional key passed to the constructor. It is automatically registered when you call `builder.Services.AddMcpify()`, but you can replace it with your own `ISecureTokenStore` if you want to centralize key management (e.g., KMS).
 
 #### Pass-Through Bearer Tokens
 If a client provides an `Authorization: Bearer <token>` header to MCPify, this token will automatically be made available to `IAuthenticationProvider` implementations via `IMcpContextAccessor.AccessToken`. The `OAuthAuthorizationCodeAuthentication` implementation will prioritize this pass-through token over any tokens it might have stored internally.
