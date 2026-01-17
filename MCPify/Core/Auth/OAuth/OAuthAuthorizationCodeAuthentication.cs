@@ -31,6 +31,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly string _stateSecret;
     private readonly bool _allowDefaultSessionFallback;
     private readonly ISessionMap? _sessionMap; // Optional dependency for Lazy Auth
+    private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private const string _oauthProviderName = "OAuth";
     private const string _pkceStorePrefix = "pkce_";
 
@@ -49,7 +50,8 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         Action<string>? authorizationUrlEmitter = null,
         string? stateSecret = null,
         bool allowDefaultSessionFallback = false,
-        ISessionMap? sessionMap = null)
+        ISessionMap? sessionMap = null,
+        string? resourceUrl = null)
     {
         _clientId = clientId;
         _authorizationEndpoint = authorizationEndpoint;
@@ -66,6 +68,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _stateSecret = stateSecret ?? "A_VERY_LONG_AND_SECURE_SECRET_KEY_FOR_HMAC_SIGNING";
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
         _sessionMap = sessionMap;
+        _resourceUrl = resourceUrl;
     }
 
     public virtual string BuildAuthorizationUrl(string sessionId)
@@ -91,6 +94,11 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         {
             query["code_challenge"] = pkce.Value.CodeChallenge;
             query["code_challenge_method"] = "S256";
+        }
+        // RFC 8707: Add resource parameter if configured
+        if (!string.IsNullOrEmpty(_resourceUrl))
+        {
+            query["resource"] = _resourceUrl;
         }
 
         return $"{_authorizationEndpoint}?{query}";
@@ -239,6 +247,12 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
             form["client_secret"] = _clientSecret;
         }
 
+        // RFC 8707: Add resource parameter if configured
+        if (!string.IsNullOrEmpty(_resourceUrl))
+        {
+            form["resource"] = _resourceUrl;
+        }
+
         var content = new FormUrlEncodedContent(form);
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
@@ -273,6 +287,12 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         if (!string.IsNullOrEmpty(_clientSecret))
         {
             form["client_secret"] = _clientSecret;
+        }
+
+        // RFC 8707: Add resource parameter if configured
+        if (!string.IsNullOrEmpty(_resourceUrl))
+        {
+            form["resource"] = _resourceUrl;
         }
 
         var content = new FormUrlEncodedContent(form);

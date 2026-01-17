@@ -14,6 +14,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
     private readonly ISecureTokenStore _secureTokenStore;
     private readonly IMcpContextAccessor _mcpContextAccessor;
     private readonly HttpClient _httpClient;
+    private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private const string _clientCredentialsProviderName = "ClientCredentials";
 
     public ClientCredentialsAuthentication(
@@ -23,7 +24,8 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         string scope,
         ISecureTokenStore secureTokenStore,
         IMcpContextAccessor mcpContextAccessor,
-        HttpClient? httpClient = null)
+        HttpClient? httpClient = null,
+        string? resourceUrl = null)
     {
         _clientId = clientId;
         _clientSecret = clientSecret;
@@ -32,6 +34,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         _secureTokenStore = secureTokenStore;
         _mcpContextAccessor = mcpContextAccessor;
         _httpClient = httpClient ?? new HttpClient();
+        _resourceUrl = resourceUrl;
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
@@ -61,6 +64,12 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
             { "client_secret", _clientSecret },
             { "scope", _scope }
         };
+
+        // RFC 8707: Add resource parameter if configured
+        if (!string.IsNullOrEmpty(_resourceUrl))
+        {
+            form["resource"] = _resourceUrl;
+        }
 
         var content = new FormUrlEncodedContent(form);
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);

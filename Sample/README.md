@@ -7,7 +7,11 @@ This sample demonstrates how to use **MCPify** to expose ASP.NET Core endpoints 
 -   **OAuth 2.0 Provider**: An in-app OAuth 2.0 Authorization Server powered by OpenIddict, demonstrating full auth code and client credentials flows.
 -   **Secure Endpoints**: A protected `/api/secrets` endpoint, requiring OAuth 2.0 authorization.
 -   **External OpenAPI Integration**: Integration with the public Petstore API (`https://petstore.swagger.io/v2/swagger.json`), exposing its operations as `petstore_` prefixed MCP tools. Also demonstrates loading from a local file (`sample-api.json`) via `localfile_` tools.
--   **Protected Resource Metadata**: Exposes the `/.well-known/oauth-protected-resource` endpoint for client discovery.
+-   **MCP Authorization Spec Compliant**: Full compliance with the [MCP Authorization Specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization):
+    -   Protected Resource Metadata (`/.well-known/oauth-protected-resource`)
+    -   RFC 8707 Resource Parameter in OAuth requests
+    -   JWT token validation (expiration, audience, scopes)
+    -   403 Forbidden with `insufficient_scope` error
 -   **Stdio & HTTP Transports**: Supports both Stdio for local desktop integration and HTTP (SSE) for remote access.
 
 ## Prerequisites
@@ -80,7 +84,11 @@ To run the server in HTTP mode (using Server-Sent Events):
 
 This sample demonstrates how clients can authenticate with MCPify using OAuth 2.0 Authorization Code flow.
 
-1.  **Discover Authentication**: When an unauthenticated client attempts to use a protected tool (e.g., `api_secrets_get`), MCPify will respond with a `401 Unauthorized` HTTP status code and a `WWW-Authenticate` header, including `resource_metadata`. The client should then fetch this metadata.
+1.  **Discover Authentication**: When an unauthenticated client attempts to use a protected tool (e.g., `api_secrets_get`), MCPify will respond with:
+    -   `401 Unauthorized` with `WWW-Authenticate: Bearer resource_metadata="..."` for missing/invalid tokens
+    -   `403 Forbidden` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="..."` for valid tokens lacking required scopes
+
+    The client should fetch the `resource_metadata` URL to discover authorization server details.
 2.  **Initiate Login**: The client (e.g., Claude Desktop) will call the `login_auth_code_pkce` tool provided by MCPify. This tool returns an authorization URL.
 3.  **User Authorization**: The user opens the authorization URL in a browser, logs in (using the OpenIddict provider in this sample), and grants consent.
 4.  **Callback and Token Exchange**: After user authorization, the browser redirects to MCPify's callback endpoint (`/auth/callback`). MCPify handles the code exchange and stores the token securely for the specific session.
@@ -121,6 +129,40 @@ Attach these either to `options.LocalEndpoints.AuthenticationFactory` or to a sp
 
 ### Pass-through Bearer Tokens
 If your MCP client already sends `Authorization: Bearer <token>` to the sample, MCPify will forward that token via `IMcpContextAccessor.AccessToken` instead of using stored OAuth/client-credentials tokens.
+
+### Token Validation (Optional)
+
+MCPify supports JWT token validation for enhanced security. Enable it by configuring `TokenValidation`:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ResourceUrlOverride = baseUrl;
+
+    // Enable JWT token validation
+    options.TokenValidation = new TokenValidationOptions
+    {
+        EnableJwtValidation = true,      // Parse and validate JWT tokens
+        ValidateAudience = true,         // Validate 'aud' claim
+        ValidateScopes = true,           // Validate required scopes
+        DefaultRequiredScopes = new() { "mcp.access" }
+    };
+
+    // Per-tool scope requirements
+    options.ScopeRequirements = new()
+    {
+        new ScopeRequirement
+        {
+            Pattern = "api_secrets_*",
+            RequiredScopes = new() { "read_secrets" }
+        }
+    };
+});
+```
+
+When token validation is enabled, MCPify returns:
+-   **401 Unauthorized** with `error="invalid_token"` for expired or invalid tokens
+-   **403 Forbidden** with `error="insufficient_scope"` for valid tokens missing required scopes
 
 ### Relevant configuration knobs
 These can be configured in `appsettings.json` or via command-line arguments.

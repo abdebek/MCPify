@@ -10,6 +10,11 @@
     -   Includes a `login_auth_code_pkce` tool that handles the browser-based login flow automatically.
     -   Securely stores tokens per session using encrypted local storage.
     -   Automatically refreshes tokens when they expire.
+-   **MCP Authorization Spec Compliant**: Full compliance with the [MCP Authorization Specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+    -   Protected Resource Metadata (`/.well-known/oauth-protected-resource`)
+    -   RFC 8707 Resource Parameter support
+    -   JWT token validation (expiration, audience, scopes)
+    -   403 Forbidden with `insufficient_scope` error
 -   **Dual Transport**: Supports both `Stdio` (for local desktop apps like Claude) and `Http` (SSE) transports.
 -   **Production Ready**: Robust logging, error handling, and configurable options.
 
@@ -159,6 +164,108 @@ With `Auto` mode, MCPify detects headless environments by checking:
 -   **Linux**: Missing `DISPLAY` or `WAYLAND_DISPLAY` environment variables, SSH sessions without X forwarding, Docker containers
 -   **Windows**: Container environments (Kubernetes, Docker)
 -   **macOS**: SSH sessions
+
+### Token Validation
+
+MCPify supports JWT token validation for enhanced security. Token validation is opt-in for backward compatibility.
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    // Set the resource URL for audience validation
+    options.ResourceUrlOverride = "https://api.example.com";
+
+    // Enable token validation (opt-in)
+    options.TokenValidation = new TokenValidationOptions
+    {
+        EnableJwtValidation = true,      // Enable JWT parsing and validation
+        ValidateAudience = true,         // Validate 'aud' claim matches resource URL
+        ValidateScopes = true,           // Validate token has required scopes
+        DefaultRequiredScopes = new List<string> { "mcp.access" },
+        ClockSkew = TimeSpan.FromMinutes(5)  // Allowed clock skew for expiration
+    };
+});
+```
+
+When validation fails, MCPify returns appropriate HTTP responses:
+
+| Scenario | Status Code | WWW-Authenticate |
+|----------|-------------|------------------|
+| No token provided | 401 Unauthorized | `Bearer resource_metadata="..."` |
+| Token expired | 401 Unauthorized | `Bearer error="invalid_token", error_description="Token has expired"` |
+| Wrong audience | 401 Unauthorized | `Bearer error="invalid_token", error_description="Token audience does not match..."` |
+| Missing scopes | 403 Forbidden | `Bearer error="insufficient_scope", scope="required_scope"` |
+
+### Per-Tool Scope Requirements
+
+Define granular scope requirements for specific tools using pattern matching:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.TokenValidation = new TokenValidationOptions
+    {
+        EnableJwtValidation = true,
+        ValidateScopes = true,
+        DefaultRequiredScopes = new List<string> { "mcp.access" }
+    };
+
+    // Define per-tool scope requirements
+    options.ScopeRequirements = new List<ScopeRequirement>
+    {
+        // All admin_* tools require 'admin' scope
+        new ScopeRequirement
+        {
+            Pattern = "admin_*",
+            RequiredScopes = new List<string> { "admin" }
+        },
+        // Write operations require 'write' scope
+        new ScopeRequirement
+        {
+            Pattern = "*_create",
+            RequiredScopes = new List<string> { "write" }
+        },
+        new ScopeRequirement
+        {
+            Pattern = "*_update",
+            RequiredScopes = new List<string> { "write" }
+        },
+        new ScopeRequirement
+        {
+            Pattern = "*_delete",
+            RequiredScopes = new List<string> { "write" }
+        },
+        // Read-only tools need at least 'read' OR 'write' scope
+        new ScopeRequirement
+        {
+            Pattern = "*_get",
+            AnyOfScopes = new List<string> { "read", "write" }
+        }
+    };
+});
+```
+
+Pattern matching supports:
+-   `*` - matches any sequence of characters
+-   `?` - matches any single character
+-   Exact match - `tool_name`
+
+### RFC 8707 Resource Parameter
+
+MCPify automatically includes the [RFC 8707](https://datatracker.ietf.org/doc/html/rfc8707) `resource` parameter in OAuth requests when `ResourceUrlOverride` is configured. This helps authorization servers issue tokens scoped to specific resources:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ResourceUrlOverride = "https://api.example.com";
+    // ...
+});
+```
+
+The resource parameter is added to:
+-   Authorization URL (`/authorize?resource=...`)
+-   Token exchange requests (`POST /token` with `resource=...`)
+-   Token refresh requests
 
 ## Contributing
 

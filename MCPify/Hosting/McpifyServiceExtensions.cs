@@ -103,6 +103,30 @@ public static class McpifyServiceExtensions
         }
         services.AddSingleton(oauthStore);
 
+        // Register token validation services if enabled
+        if (opts.TokenValidation != null)
+        {
+            services.AddSingleton(opts.TokenValidation);
+
+            if (opts.TokenValidation.EnableJwtValidation)
+            {
+                services.AddSingleton<IAccessTokenValidator>(sp =>
+                    new JwtAccessTokenValidator(sp.GetRequiredService<TokenValidationOptions>()));
+            }
+
+            // Register scope requirement store
+            services.AddSingleton(sp =>
+                new ScopeRequirementStore(opts.ScopeRequirements, sp.GetRequiredService<TokenValidationOptions>()));
+        }
+        else
+        {
+            // Register empty token validation options for when validation is not configured
+            var defaultOptions = new TokenValidationOptions();
+            services.AddSingleton(defaultOptions);
+            services.AddSingleton(sp =>
+                new ScopeRequirementStore(opts.ScopeRequirements, defaultOptions));
+        }
+
         return services;
     }
 
