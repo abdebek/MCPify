@@ -259,5 +259,88 @@ public class ScopeRequirementTests
         Assert.Contains("users.manage", failResult.MissingScopes);
     }
 
+    [Fact]
+    public void ValidateScopesForTool_UsesOAuthConfiguredScopes_WhenEnabled()
+    {
+        var oauthStore = new OAuthConfigurationStore();
+        oauthStore.AddConfiguration(new OAuth2Configuration
+        {
+            AuthorizationUrl = "https://auth",
+            Scopes = new Dictionary<string, string>
+            {
+                { "read", "Read access" },
+                { "write", "Write access" }
+            }
+        });
+
+        var options = new TokenValidationOptions
+        {
+            RequireOAuthConfiguredScopes = true
+        };
+        var store = new ScopeRequirementStore(new List<ScopeRequirement>(), options, oauthStore);
+
+        // Token with all OAuth-configured scopes should pass
+        var result = store.ValidateScopesForTool("any_tool", new[] { "read", "write" });
+        Assert.True(result.IsValid);
+
+        // Token missing one OAuth-configured scope should fail
+        var failResult = store.ValidateScopesForTool("any_tool", new[] { "read" });
+        Assert.False(failResult.IsValid);
+        Assert.Contains("write", failResult.MissingScopes);
+    }
+
+    [Fact]
+    public void ValidateScopesForTool_IgnoresOAuthScopes_WhenDisabled()
+    {
+        var oauthStore = new OAuthConfigurationStore();
+        oauthStore.AddConfiguration(new OAuth2Configuration
+        {
+            AuthorizationUrl = "https://auth",
+            Scopes = new Dictionary<string, string>
+            {
+                { "read", "Read access" },
+                { "write", "Write access" }
+            }
+        });
+
+        var options = new TokenValidationOptions
+        {
+            RequireOAuthConfiguredScopes = false // disabled by default
+        };
+        var store = new ScopeRequirementStore(new List<ScopeRequirement>(), options, oauthStore);
+
+        // Token with no scopes should pass when OAuth scope checking is disabled
+        var result = store.ValidateScopesForTool("any_tool", Array.Empty<string>());
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void GetRequiredScopesForTool_IncludesOAuthScopes_WhenEnabled()
+    {
+        var oauthStore = new OAuthConfigurationStore();
+        oauthStore.AddConfiguration(new OAuth2Configuration
+        {
+            AuthorizationUrl = "https://auth",
+            Scopes = new Dictionary<string, string>
+            {
+                { "api.read", "Read API" },
+                { "api.write", "Write API" }
+            }
+        });
+
+        var options = new TokenValidationOptions
+        {
+            RequireOAuthConfiguredScopes = true,
+            DefaultRequiredScopes = new List<string> { "mcp.access" }
+        };
+        var store = new ScopeRequirementStore(new List<ScopeRequirement>(), options, oauthStore);
+
+        var scopes = store.GetRequiredScopesForTool("any_tool").ToList();
+
+        Assert.Contains("mcp.access", scopes);
+        Assert.Contains("api.read", scopes);
+        Assert.Contains("api.write", scopes);
+    }
+
     #endregion
 }

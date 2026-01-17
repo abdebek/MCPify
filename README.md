@@ -175,17 +175,38 @@ builder.Services.AddMcpify(options =>
     // Set the resource URL for audience validation
     options.ResourceUrlOverride = "https://api.example.com";
 
+    // Configure OAuth (scopes defined here can be auto-required)
+    options.OAuthConfigurations.Add(new OAuth2Configuration
+    {
+        AuthorizationUrl = "https://auth.example.com/authorize",
+        TokenUrl = "https://auth.example.com/token",
+        Scopes = new Dictionary<string, string>
+        {
+            { "read", "Read access" },
+            { "write", "Write access" }
+        }
+    });
+
     // Enable token validation (opt-in)
     options.TokenValidation = new TokenValidationOptions
     {
         EnableJwtValidation = true,      // Enable JWT parsing and validation
         ValidateAudience = true,         // Validate 'aud' claim matches resource URL
         ValidateScopes = true,           // Validate token has required scopes
-        DefaultRequiredScopes = new List<string> { "mcp.access" },
-        ClockSkew = TimeSpan.FromMinutes(5)  // Allowed clock skew for expiration
+        RequireOAuthConfiguredScopes = true,  // Require scopes from OAuth2Configuration
+        ClockSkew = TimeSpan.FromMinutes(5)   // Allowed clock skew for expiration
     };
 });
 ```
+
+**Scope Configuration Options:**
+
+| Option | Description |
+|--------|-------------|
+| `RequireOAuthConfiguredScopes = true` | Automatically require all scopes from OAuth configurations. This includes scopes defined in `OAuthConfigurations` **and** scopes discovered from OpenAPI security schemes. |
+| `DefaultRequiredScopes` | Explicitly list required scopes (use when you want different scopes than what's advertised in OAuth config). |
+
+**Automatic Integration with OpenAPI:** When MCPify loads an external API from an OpenAPI spec that includes OAuth2 security schemes (like those configured for Swagger UI), the scopes are automatically parsed and added to the OAuth configuration store. With `RequireOAuthConfiguredScopes = true`, these scopes are automatically enforced during token validation - no duplicate configuration needed.
 
 When validation fails, MCPify returns appropriate HTTP responses:
 

@@ -8,11 +8,13 @@ public class ScopeRequirementStore
 {
     private readonly List<ScopeRequirement> _requirements;
     private readonly TokenValidationOptions _options;
+    private readonly OAuthConfigurationStore? _oauthStore;
 
-    public ScopeRequirementStore(IEnumerable<ScopeRequirement> requirements, TokenValidationOptions options)
+    public ScopeRequirementStore(IEnumerable<ScopeRequirement> requirements, TokenValidationOptions options, OAuthConfigurationStore? oauthStore = null)
     {
         _requirements = requirements.ToList();
         _options = options;
+        _oauthStore = oauthStore;
     }
 
     /// <summary>
@@ -43,6 +45,22 @@ public class ScopeRequirementStore
             if (!scopeSet.Contains(defaultScope))
             {
                 missingScopes.Add(defaultScope);
+            }
+        }
+
+        // Check OAuth-configured scopes if enabled
+        if (_options.RequireOAuthConfiguredScopes && _oauthStore != null)
+        {
+            var oauthScopes = _oauthStore.GetConfigurations()
+                .SelectMany(c => c.Scopes.Keys)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var oauthScope in oauthScopes)
+            {
+                if (!scopeSet.Contains(oauthScope))
+                {
+                    missingScopes.Add(oauthScope);
+                }
             }
         }
 
@@ -82,6 +100,18 @@ public class ScopeRequirementStore
         foreach (var scope in _options.DefaultRequiredScopes)
         {
             scopes.Add(scope);
+        }
+
+        // Add OAuth-configured scopes if enabled
+        if (_options.RequireOAuthConfiguredScopes && _oauthStore != null)
+        {
+            foreach (var config in _oauthStore.GetConfigurations())
+            {
+                foreach (var scope in config.Scopes.Keys)
+                {
+                    scopes.Add(scope);
+                }
+            }
         }
 
         // Add tool-specific scopes

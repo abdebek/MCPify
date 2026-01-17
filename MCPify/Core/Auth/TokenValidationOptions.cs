@@ -37,6 +37,13 @@ public class TokenValidationOptions
     public List<string> DefaultRequiredScopes { get; set; } = new();
 
     /// <summary>
+    /// When true, automatically requires all scopes defined in <see cref="OAuth2Configuration.Scopes"/>
+    /// from the <see cref="OAuthConfigurationStore"/> in addition to <see cref="DefaultRequiredScopes"/>.
+    /// Defaults to false for backward compatibility.
+    /// </summary>
+    public bool RequireOAuthConfiguredScopes { get; set; } = false;
+
+    /// <summary>
     /// The claim name used for scopes in the JWT token.
     /// Common values: "scope", "scp", "scopes".
     /// Defaults to "scope".

@@ -139,16 +139,17 @@ builder.Services.AddMcpify(options =>
 {
     options.ResourceUrlOverride = baseUrl;
 
-    // Enable JWT token validation
+    // OAuth scopes are already configured via OAuthConfigurations
+    // You can require these scopes automatically:
     options.TokenValidation = new TokenValidationOptions
     {
-        EnableJwtValidation = true,      // Parse and validate JWT tokens
-        ValidateAudience = true,         // Validate 'aud' claim
-        ValidateScopes = true,           // Validate required scopes
-        DefaultRequiredScopes = new() { "mcp.access" }
+        EnableJwtValidation = true,           // Parse and validate JWT tokens
+        ValidateAudience = true,              // Validate 'aud' claim
+        ValidateScopes = true,                // Validate required scopes
+        RequireOAuthConfiguredScopes = true   // Auto-require scopes from OAuth2Configuration
     };
 
-    // Per-tool scope requirements
+    // Or define per-tool scope requirements for finer control
     options.ScopeRequirements = new()
     {
         new ScopeRequirement
@@ -159,6 +160,12 @@ builder.Services.AddMcpify(options =>
     };
 });
 ```
+
+**Note:** Setting `RequireOAuthConfiguredScopes = true` automatically requires all scopes from:
+-   Scopes defined in `OAuthConfigurations`
+-   Scopes discovered from OpenAPI security schemes (e.g., OAuth2 configured for Swagger UI)
+
+This means if your OpenAPI spec already defines OAuth2 scopes, MCPify will automatically enforce them during token validation - no duplicate configuration needed.
 
 When token validation is enabled, MCPify returns:
 -   **401 Unauthorized** with `error="invalid_token"` for expired or invalid tokens

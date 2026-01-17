@@ -114,9 +114,12 @@ public static class McpifyServiceExtensions
                     new JwtAccessTokenValidator(sp.GetRequiredService<TokenValidationOptions>()));
             }
 
-            // Register scope requirement store
+            // Register scope requirement store with access to OAuth configurations
             services.AddSingleton(sp =>
-                new ScopeRequirementStore(opts.ScopeRequirements, sp.GetRequiredService<TokenValidationOptions>()));
+                new ScopeRequirementStore(
+                    opts.ScopeRequirements,
+                    sp.GetRequiredService<TokenValidationOptions>(),
+                    sp.GetService<OAuthConfigurationStore>()));
         }
         else
         {
@@ -124,7 +127,10 @@ public static class McpifyServiceExtensions
             var defaultOptions = new TokenValidationOptions();
             services.AddSingleton(defaultOptions);
             services.AddSingleton(sp =>
-                new ScopeRequirementStore(opts.ScopeRequirements, defaultOptions));
+                new ScopeRequirementStore(
+                    opts.ScopeRequirements,
+                    defaultOptions,
+                    sp.GetService<OAuthConfigurationStore>()));
         }
 
         return services;
