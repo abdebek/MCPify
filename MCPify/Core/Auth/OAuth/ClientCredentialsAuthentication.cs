@@ -57,21 +57,13 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> RequestTokenAsync(CancellationToken cancellationToken)
     {
-        var form = new Dictionary<string, string>
-        {
-            { "grant_type", "client_credentials" },
-            { "client_id", _clientId },
-            { "client_secret", _clientSecret },
-            { "scope", _scope }
-        };
-
-        // RFC 8707: Add resource parameter if configured
-        if (!string.IsNullOrEmpty(_resourceUrl))
-        {
-            form["resource"] = _resourceUrl;
-        }
-
-        var content = new FormUrlEncodedContent(form);
+        var content = FormUrlEncoded.Create()
+            .Add("grant_type", "client_credentials")
+            .Add("client_id", _clientId)
+            .Add("client_secret", _clientSecret)
+            .Add("scope", _scope)
+            .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+            .ToContent();
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();
 

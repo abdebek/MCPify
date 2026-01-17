@@ -76,19 +76,11 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> PerformDeviceLoginAsync(CancellationToken cancellationToken)
     {
-        var codeRequestForm = new Dictionary<string, string>
-        {
-            { "client_id", _clientId },
-            { "scope", _scope }
-        };
-
-        // RFC 8707: Add resource parameter if configured
-        if (!string.IsNullOrEmpty(_resourceUrl))
-        {
-            codeRequestForm["resource"] = _resourceUrl;
-        }
-
-        var codeRequest = new FormUrlEncodedContent(codeRequestForm);
+        var codeRequest = FormUrlEncoded.Create()
+            .Add("client_id", _clientId)
+            .Add("scope", _scope)
+            .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+            .ToContent();
 
         var codeResponse = await _httpClient.PostAsync(_deviceCodeEndpoint, codeRequest, cancellationToken);
         codeResponse.EnsureSuccessStatusCode();
@@ -105,20 +97,12 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         {
             await Task.Delay(interval * 1000, cancellationToken);
 
-            var tokenRequestForm = new Dictionary<string, string>
-            {
-                { "grant_type", "urn:ietf:params:oauth:grant-type:device_code" },
-                { "client_id", _clientId },
-                { "device_code", codeData.device_code }
-            };
-
-            // RFC 8707: Add resource parameter if configured
-            if (!string.IsNullOrEmpty(_resourceUrl))
-            {
-                tokenRequestForm["resource"] = _resourceUrl;
-            }
-
-            var tokenRequest = new FormUrlEncodedContent(tokenRequestForm);
+            var tokenRequest = FormUrlEncoded.Create()
+                .Add("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
+                .Add("client_id", _clientId)
+                .Add("device_code", codeData.device_code)
+                .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+                .ToContent();
 
             var tokenResponse = await _httpClient.PostAsync(_tokenEndpoint, tokenRequest, cancellationToken);
             
@@ -144,20 +128,12 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> RefreshTokenAsync(string refreshToken, CancellationToken cancellationToken)
     {
-        var form = new Dictionary<string, string>
-        {
-            { "grant_type", "refresh_token" },
-            { "client_id", _clientId },
-            { "refresh_token", refreshToken }
-        };
-
-        // RFC 8707: Add resource parameter if configured
-        if (!string.IsNullOrEmpty(_resourceUrl))
-        {
-            form["resource"] = _resourceUrl;
-        }
-
-        var content = new FormUrlEncodedContent(form);
+        var content = FormUrlEncoded.Create()
+            .Add("grant_type", "refresh_token")
+            .Add("client_id", _clientId)
+            .Add("refresh_token", refreshToken)
+            .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+            .ToContent();
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();

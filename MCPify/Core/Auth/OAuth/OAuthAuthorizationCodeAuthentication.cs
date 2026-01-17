@@ -229,31 +229,15 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> ExchangeCodeForTokenAsync(string code, string redirectUri, string? codeVerifier, CancellationToken cancellationToken)
     {
-        var form = new Dictionary<string, string>
-        {
-            { "grant_type", "authorization_code" },
-            { "client_id", _clientId },
-            { "code", code },
-            { "redirect_uri", redirectUri }
-        };
-
-        if (!string.IsNullOrEmpty(codeVerifier))
-        {
-            form["code_verifier"] = codeVerifier;
-        }
-
-        if (!string.IsNullOrEmpty(_clientSecret))
-        {
-            form["client_secret"] = _clientSecret;
-        }
-
-        // RFC 8707: Add resource parameter if configured
-        if (!string.IsNullOrEmpty(_resourceUrl))
-        {
-            form["resource"] = _resourceUrl;
-        }
-
-        var content = new FormUrlEncodedContent(form);
+        var content = FormUrlEncoded.Create()
+            .Add("grant_type", "authorization_code")
+            .Add("client_id", _clientId)
+            .Add("code", code)
+            .Add("redirect_uri", redirectUri)
+            .AddIfNotEmpty("code_verifier", codeVerifier)
+            .AddIfNotEmpty("client_secret", _clientSecret)
+            .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+            .ToContent();
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -277,25 +261,13 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     private async Task<TokenData> RefreshTokenAsync(string refreshToken, string sessionId, CancellationToken cancellationToken)
     {
-        var form = new Dictionary<string, string>
-        {
-            { "grant_type", "refresh_token" },
-            { "client_id", _clientId },
-            { "refresh_token", refreshToken }
-        };
-
-        if (!string.IsNullOrEmpty(_clientSecret))
-        {
-            form["client_secret"] = _clientSecret;
-        }
-
-        // RFC 8707: Add resource parameter if configured
-        if (!string.IsNullOrEmpty(_resourceUrl))
-        {
-            form["resource"] = _resourceUrl;
-        }
-
-        var content = new FormUrlEncodedContent(form);
+        var content = FormUrlEncoded.Create()
+            .Add("grant_type", "refresh_token")
+            .Add("client_id", _clientId)
+            .Add("refresh_token", refreshToken)
+            .AddIfNotEmpty("client_secret", _clientSecret)
+            .AddIfNotEmpty("resource", _resourceUrl)  // RFC 8707
+            .ToContent();
 
         var response = await _httpClient.PostAsync(_tokenEndpoint, content, cancellationToken);
         response.EnsureSuccessStatusCode();
