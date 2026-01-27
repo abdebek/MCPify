@@ -4,9 +4,11 @@ using System.Reflection;
 using System.Text.Json;
 using MCPify.Core;
 using MCPify.Core.Auth;
+using MCPify.Core.Auth.TokenProviders;
 using MCPify.Schema;
 using MCPify.Tests.Integration;
 using MCPify.Tools;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
 
 namespace MCPify.Tests;
@@ -31,13 +33,18 @@ public class OpenApiProxyToolTests : IAsyncLifetime
         );
 
         var auth = new TrackingAuthProvider();
+        var serviceProvider = new ServiceCollection()
+            .AddScoped<IMcpContextAccessor, McpContextAccessor>()
+            .BuildServiceProvider();
+
+        var tokenProvider = new AuthenticationFactoryTokenProvider(_ => auth, serviceProvider);
         var tool = new OpenApiProxyTool(
             descriptor,
             _apiServer.BaseUrl,
             _apiServer.CreateClient(),
             _schema,
             new McpifyOptions(),
-            _ => auth
+            tokenProvider
         );
 
         var request = BuildRequest(tool, null);
@@ -72,7 +79,8 @@ public class OpenApiProxyToolTests : IAsyncLifetime
             _apiServer.BaseUrl,
             _apiServer.CreateClient(),
             _schema,
-            new McpifyOptions()
+            new McpifyOptions(),
+            NoTokenProvider.Instance
         );
 
         var request = BuildRequest(tool, new Dictionary<string, object> { { "id", 123 } });

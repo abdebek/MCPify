@@ -5,6 +5,7 @@ using MCPify.Schema;
 using Microsoft.OpenApi.Models;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,7 +21,7 @@ public class OpenApiProxyTool : McpServerTool
     private readonly Func<string> _apiBaseUrlProvider;
     private readonly OpenApiOperationDescriptor _descriptor;
     private readonly McpifyOptions _options;
-    private readonly Func<IServiceProvider, IAuthenticationProvider>? _authenticationFactory;
+    private readonly ITokenProvider _tokenProvider;
     private IReadOnlyList<object>? _metadata;
 
     public OpenApiProxyTool(
@@ -29,8 +30,8 @@ public class OpenApiProxyTool : McpServerTool
         HttpClient http,
         IJsonSchemaGenerator schema,
         McpifyOptions options,
-        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
-        : this(descriptor, () => apiBaseUrl, http, schema, options, authenticationFactory)
+        ITokenProvider tokenProvider)
+        : this(descriptor, () => apiBaseUrl, http, schema, options, tokenProvider)
     {
     }
 
@@ -40,14 +41,14 @@ public class OpenApiProxyTool : McpServerTool
         HttpClient http,
         IJsonSchemaGenerator schema,
         McpifyOptions options,
-        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
+        ITokenProvider tokenProvider)
     {
         _descriptor = descriptor;
         _apiBaseUrlProvider = apiBaseUrlProvider;
         _http = http;
         _schema = schema;
         _options = options;
-        _authenticationFactory = authenticationFactory;
+        _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
     }
 
     public override Tool ProtocolTool => new()
@@ -74,10 +75,18 @@ public class OpenApiProxyTool : McpServerTool
             var request = BuildHttpRequest(argsDict);
             logger?.LogInformation("Invoking {Method} {Url}", request.Method, request.RequestUri);
 
-            if (_authenticationFactory != null)
+            var authToken = await _tokenProvider.GetTokenAsync(token);
+            if (!string.IsNullOrEmpty(authToken))
             {
-                var authentication = _authenticationFactory.Invoke(context.Services!);
-                await authentication.ApplyAsync(request, token);
+                var parts = authToken.Split(' ', 2);
+                if (parts.Length == 2)
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue(parts[0], parts[1]);
+                }
+                else
+                {
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
+                }
             }
 
             var response = await _http.SendAsync(request, token);

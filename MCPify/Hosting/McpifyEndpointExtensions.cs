@@ -1,5 +1,6 @@
 using MCPify.Core;
 using MCPify.Core.Auth;
+using MCPify.Core.Auth.TokenProviders;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -87,7 +88,8 @@ public static class McpifyEndpointExtensions
                                 DefaultHeaders = options.LocalEndpoints.DefaultHeaders
                             };
 
-                            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, options.LocalEndpoints.AuthenticationFactory);
+                            var tokenProvider = TokenProviderFactory.Create(services, options.LocalEndpoints.TokenSource, options.LocalEndpoints.AuthenticationFactory);
+                            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, tokenProvider);
                             toolCollection.Add(tool);
                             count++;
                         }

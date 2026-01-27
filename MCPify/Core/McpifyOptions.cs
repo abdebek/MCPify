@@ -73,6 +73,35 @@ public class McpifyOptions
 }
 
 /// <summary>
+/// Defines where authentication tokens should be sourced from.
+/// </summary>
+public enum TokenSource
+{
+    /// <summary>
+    /// MCPify server manages authentication (OAuth flows, API keys, etc.).
+    /// This is the default for backward compatibility.
+    /// </summary>
+    Server,
+
+    /// <summary>
+    /// MCP client provides the authentication token directly.
+    /// Use this when the client handles OAuth or other authentication flows.
+    /// </summary>
+    Client,
+
+    /// <summary>
+    /// Try client token first, then fall back to server authentication.
+    /// Useful for hybrid scenarios.
+    /// </summary>
+    Both,
+
+    /// <summary>
+    /// No authentication required.
+    /// </summary>
+    None
+}
+
+/// <summary>
 /// Defines the available transport types for the MCP server.
 /// </summary>
 public enum McpTransportType
@@ -142,6 +171,12 @@ public class LocalEndpointsOptions
     /// A factory for creating an authentication provider for local endpoints.
     /// </summary>
     public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
+
+    /// <summary>
+    /// Specifies where authentication tokens should be sourced from.
+    /// Defaults to Server for backward compatibility.
+    /// </summary>
+    public TokenSource TokenSource { get; set; } = TokenSource.Server;
 }
 
 /// <summary>
@@ -183,4 +218,10 @@ public class ExternalApiOptions
     /// A factory for creating an authentication provider for this API.
     /// </summary>
     public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
+
+    /// <summary>
+    /// Specifies where authentication tokens should be sourced from.
+    /// Defaults to Server for backward compatibility.
+    /// </summary>
+    public TokenSource TokenSource { get; set; } = TokenSource.Server;
 }

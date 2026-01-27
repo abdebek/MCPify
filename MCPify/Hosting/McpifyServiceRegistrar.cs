@@ -4,6 +4,7 @@ using MCPify.OpenApi;
 using MCPify.Schema;
 using MCPify.Tools;
 using MCPify.Core.Auth;
+using MCPify.Core.Auth.TokenProviders;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Routing;
@@ -146,7 +147,8 @@ public class McpifyServiceRegistrar
                         apiOpts.DefaultHeaders[header.Key] = header.Value;
                     }
 
-                    var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, apiOptions.AuthenticationFactory);
+                    var tokenProvider = TokenProviderFactory.Create(_serviceProvider, apiOptions.TokenSource, apiOptions.AuthenticationFactory);
+                    var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, tokenProvider);
                     var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
                     toolCollection.Add(decoratedTool);
                     count++;
@@ -215,7 +217,8 @@ public class McpifyServiceRegistrar
                 ? _options.LocalEndpoints.AuthenticationFactory
                 : null;
 
-            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, effectiveAuthFactory);
+            var tokenProvider = TokenProviderFactory.Create(_serviceProvider, _options.LocalEndpoints.TokenSource, effectiveAuthFactory);
+            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, tokenProvider);
             var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
             toolCollection.Add(decoratedTool);
             count++;
