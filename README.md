@@ -5,11 +5,19 @@
 
 **MCPify** is a .NET library that bridges the gap between your existing ASP.NET Core APIs (or external OpenAPI/Swagger specs) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It allows you to expose API operations as MCP tools that can be consumed by AI assistants like Claude Desktop, ensuring seamless integration with your existing services.
 
-> **Latest Release:** v0.0.12 - Now with enhanced OAuth middleware and improved testing infrastructure!
+> **Latest Release:** v0.0.13-preview - Now with flexible token provider architecture and client-managed authentication!
 
 ## What's New
 
-### v0.0.12 (Latest - Jan 23, 2026)
+### v0.0.13-preview (Latest - Jan 27, 2026)
+-   **Flexible Token Provider Architecture**: New `ITokenProvider` abstraction separates token acquisition from token attachment
+-   **Client-Managed Authentication**: Native support for MCP clients providing tokens via `TokenSource.Client`
+-   **TokenSource Configuration**: Explicit control over token sourcing with `Server`, `Client`, `Both`, or `None` options
+-   **No More Placeholder Auth**: Eliminates the need for placeholder authentication configurations when clients handle OAuth
+-   **Factory Pattern**: Consolidated token provider creation via `TokenProviderFactory`
+-   **Better Testability**: Simplified mocking and testing with clean `ITokenProvider` interface
+
+### v0.0.12 (Jan 23, 2026)
 -   **Enhanced OAuth Middleware**: Improved OAuth authentication middleware with better error handling and token management (#17)
 -   **JWT Token Validation**: Full support for JWT access token validation including expiration, audience, and scope verification (#15)
 -   **Per-Tool Scope Requirements**: Define granular scope requirements for specific tools using pattern matching (#15)
@@ -72,6 +80,7 @@ builder.Services.AddMcpify(options =>
         ToolPrefix = "myapp_",
         BaseUrlOverride = "https://localhost:5001",  // Optional: override base URL
         Filter = op => op.Route.StartsWith("/api"),  // Optional: filter endpoints
+        TokenSource = TokenSource.Both,  // Optional: defaults to Both (hybrid)
         AuthenticationFactory = sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()  // Optional
     };
 
@@ -131,7 +140,113 @@ To use your MCPify app with [Claude Desktop](https://claude.ai/download), edit y
 
 ## Authentication
 
-MCPify provides comprehensive OAuth 2.0 authentication support with automatic token management, validation, and scope enforcement.
+MCPify provides comprehensive OAuth 2.0 authentication support with automatic token management, validation, and scope enforcement. You can choose whether MCPify manages authentication (server-side) or your MCP client provides tokens directly (client-side).
+
+### Token Source Configuration
+
+MCPify supports flexible token sourcing through the `TokenSource` configuration option. This allows you to control where authentication tokens come from:
+
+#### Hybrid Approach (Default - Recommended)
+
+Try client token first, fallback to server authentication - provides maximum flexibility:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        TokenSource = TokenSource.Both,  // Default - best of both worlds
+        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+    });
+});
+```
+
+This is the recommended default because:
+- If the MCP client provides a token → uses it automatically
+- If no client token → falls back to server authentication
+- Backward compatible with existing configurations
+
+#### Server-Managed Authentication
+
+MCPify exclusively handles OAuth flows, token storage, and refresh:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        TokenSource = TokenSource.Server,  // Default - MCPify manages auth
+        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+    });
+});
+```
+
+#### Client-Managed Authentication
+
+Your MCP client (e.g., Claude Desktop) handles authentication and provides tokens:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.github.com",
+        OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
+        TokenSource = TokenSource.Client  // Client provides tokens
+    });
+});
+```
+
+This is useful when:
+- Your MCP client handles OAuth flows
+- You want to avoid duplicate authentication logic
+- Tokens are managed outside MCPify
+
+#### Hybrid Approach
+
+Try client token first, fallback to server authentication:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        TokenSource = TokenSource.Both,  // Try client first, fallback to server
+        AuthenticationFactory = sp => new BearerAuthentication("fallback-token")
+    });
+});
+```
+
+#### No Authentication
+
+For public APIs that don't require authentication:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.publicapis.org",
+        OpenApiUrl = "https://api.publicapis.org/swagger.json",
+        TokenSource = TokenSource.None  // No auth required
+    });
+});
+```
+
+**Available TokenSource Values:**
+
+| Value | Description |
+|-------|-------------|
+| `Both` (default) | Try client token first, fallback to server authentication - provides maximum flexibility |
+| `Server` | MCPify manages authentication (OAuth flows, API keys, etc.) - explicit server-only auth |
+| `Client` | MCP client provides tokens directly via the protocol - explicit client-only auth |
+| `None` | No authentication required |
 
 ### Enabling OAuth
 

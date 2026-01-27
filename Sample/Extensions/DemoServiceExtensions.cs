@@ -149,18 +149,19 @@ public static class DemoServiceExtensions
                 Enabled = true,
                 ToolPrefix = "api_",
                 BaseUrlOverride = baseUrl,
-                Filter = descriptor => 
+                Filter = descriptor =>
                     !descriptor.Route.StartsWith("/connect") && // Hide auth endpoints
                     !descriptor.Route.StartsWith("/auth"),      // Hide callback
                 AuthenticationFactory = sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()
             };
 
-            // External APIs (Petstore)
+            // External APIs (Petstore) - Public API, no authentication
             options.ExternalApis.Add(new ExternalApiOptions
             {
                 ApiBaseUrl = "https://petstore.swagger.io/v2",
                 OpenApiUrl = "https://petstore.swagger.io/v2/swagger.json",
-                ToolPrefix = "petstore_"
+                ToolPrefix = "petstore_",
+                TokenSource = TokenSource.None  // Public API, no auth required
             });
 
             // External APIs (Local File Demo)

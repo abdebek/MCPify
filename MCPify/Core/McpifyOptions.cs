@@ -174,9 +174,9 @@ public class LocalEndpointsOptions
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
-    /// Defaults to Server for backward compatibility.
+    /// Defaults to Both (hybrid) - tries client token first, then server authentication.
     /// </summary>
-    public TokenSource TokenSource { get; set; } = TokenSource.Server;
+    public TokenSource TokenSource { get; set; } = TokenSource.Both;
 }
 
 /// <summary>
@@ -221,7 +221,7 @@ public class ExternalApiOptions
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
-    /// Defaults to Server for backward compatibility.
+    /// Defaults to Both (hybrid) - tries client token first, then server authentication.
     /// </summary>
-    public TokenSource TokenSource { get; set; } = TokenSource.Server;
+    public TokenSource TokenSource { get; set; } = TokenSource.Both;
 }

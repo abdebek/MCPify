@@ -127,8 +127,69 @@ AuthenticationFactory = sp => new BasicAuthentication("user", "password");
 ```
 Attach these either to `options.LocalEndpoints.AuthenticationFactory` or to a specific `ExternalApiOptions.AuthenticationFactory`.
 
+### Token Source Configuration
+
+MCPify now supports flexible token sourcing via the `TokenSource` configuration option. This allows you to control where authentication tokens come from:
+
+#### Server-Managed Authentication (Default)
+MCPify handles authentication flows:
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.example.com",
+    OpenApiUrl = "https://api.example.com/swagger.json",
+    TokenSource = TokenSource.Server,  // Default
+    AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+});
+```
+
+#### Client-Managed Authentication
+Let the MCP client provide tokens directly:
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.github.com",
+    OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
+    TokenSource = TokenSource.Client  // Client provides tokens
+});
+```
+
+This is useful when:
+- Your MCP client (e.g., Claude Desktop) handles OAuth
+- You want to avoid duplicate authentication logic
+- Tokens are managed externally
+
+#### Hybrid Approach
+Try client token first, fallback to server authentication:
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.example.com",
+    OpenApiUrl = "https://api.example.com/swagger.json",
+    TokenSource = TokenSource.Both,  // Try client, fallback to server
+    AuthenticationFactory = sp => new BearerAuthentication("fallback-token")
+});
+```
+
+#### No Authentication
+For public APIs:
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.publicapis.org",
+    OpenApiUrl = "https://api.publicapis.org/swagger.json",
+    TokenSource = TokenSource.None  // No auth
+});
+```
+
+**Available Values:**
+- `TokenSource.Both` (default): Try client first, fallback to server - maximum flexibility
+- `TokenSource.Server`: MCPify exclusively manages authentication
+- `TokenSource.Client`: MCP client exclusively provides tokens
+- `TokenSource.None`: No authentication required
+
 ### Pass-through Bearer Tokens
-If your MCP client already sends `Authorization: Bearer <token>` to the sample, MCPify will forward that token via `IMcpContextAccessor.AccessToken` instead of using stored OAuth/client-credentials tokens.
+If your MCP client already sends `Authorization: Bearer <token>` to the sample, MCPify will forward that token via `IMcpContextAccessor.AccessToken` when using `TokenSource.Client` or `TokenSource.Both`.
 
 ### Protected Resource Metadata
 
