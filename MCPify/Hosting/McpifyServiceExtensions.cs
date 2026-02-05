@@ -23,11 +23,29 @@ public static class McpifyServiceExtensions
 {
     /// <summary>
     /// Adds MCPify services to the service collection with custom configuration.
+    /// This method registers both core services and authentication services.
+    /// For more granular control, use <see cref="AddMcpifyCore"/> and <see cref="AddMcpifyAuthentication"/> separately.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
     /// <param name="configure">A delegate to configure the <see cref="McpifyOptions"/>.</param>
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddMcpify(
+        this IServiceCollection services,
+        Action<McpifyOptions> configure)
+    {
+        services.AddMcpifyCore(configure);
+        services.AddMcpifyAuthentication();
+        return services;
+    }
+
+    /// <summary>
+    /// Adds only the core MCPify services without authentication.
+    /// Use this when your MCP client handles authentication (TokenSource.Client) or when no authentication is needed (TokenSource.None).
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
+    /// <param name="configure">A delegate to configure the <see cref="McpifyOptions"/>.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    public static IServiceCollection AddMcpifyCore(
         this IServiceCollection services,
         Action<McpifyOptions> configure)
     {
@@ -38,13 +56,8 @@ public static class McpifyServiceExtensions
 
         services.AddSingleton<McpServerPrimitiveCollection<McpServerTool>>();
         services.AddSingleton<McpifyServiceRegistrar>();
-        
         // Register Session Map for "Lazy Authentication"
         services.AddSingleton<ISessionMap, InMemorySessionMap>();
-        
-        // Register Core Tools
-        services.AddSingleton<McpServerTool, LoginTool>();
-        services.AddSingleton<McpServerTool, SessionManagementTool>();
 
         var serverBuilder = services.AddMcpServer();
         if (opts.Transport == McpTransportType.Stdio)
@@ -86,6 +99,20 @@ public static class McpifyServiceExtensions
         // Register IMcpContextAccessor and its concrete implementation
         services.AddScoped<IMcpContextAccessor, McpContextAccessor>();
 
+        return services;
+    }
+
+    /// <summary>
+    /// Adds MCPify authentication services including OAuth support, token storage, and auth tools.
+    /// Call this after <see cref="AddMcpifyCore"/> when you need server-side authentication.
+    /// </summary>
+    /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
+    /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
+    public static IServiceCollection AddMcpifyAuthentication(this IServiceCollection services)
+    {
+        // Get the options that should have been registered by AddMcpifyCore
+        var opts = services.BuildServiceProvider().GetService<McpifyOptions>();
+
         // Register ISecureTokenStore
         services.AddSingleton<ISecureTokenStore>(sp =>
         {
@@ -102,11 +129,18 @@ public static class McpifyServiceExtensions
         services.AddSingleton<OpenApiOAuthParser>();
 
         var oauthStore = new OAuthConfigurationStore();
-        foreach (var config in opts.OAuthConfigurations)
+        if (opts != null)
         {
-            oauthStore.AddConfiguration(config);
+            foreach (var config in opts.OAuthConfigurations)
+            {
+                oauthStore.AddConfiguration(config);
+            }
         }
         services.AddSingleton(oauthStore);
+
+        // Register Auth Tools
+        services.AddSingleton<McpServerTool, LoginTool>();
+        services.AddSingleton<McpServerTool, SessionManagementTool>();
 
         services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();
 

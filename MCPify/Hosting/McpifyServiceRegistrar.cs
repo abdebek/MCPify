@@ -23,8 +23,8 @@ public class McpifyServiceRegistrar
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<McpifyServiceRegistrar> _logger;
     private readonly IOpenApiProvider _openApiProvider;
-    private readonly OpenApiOAuthParser _oauthParser;
-    private readonly OAuthConfigurationStore _oauthStore;
+    private readonly OpenApiOAuthParser? _oauthParser;
+    private readonly OAuthConfigurationStore? _oauthStore;
 
     public McpifyServiceRegistrar(
         IServiceProvider serviceProvider,
@@ -33,8 +33,8 @@ public class McpifyServiceRegistrar
         IHttpClientFactory httpClientFactory,
         ILogger<McpifyServiceRegistrar> logger,
         IOpenApiProvider openApiProvider,
-        OpenApiOAuthParser oauthParser,
-        OAuthConfigurationStore oauthStore)
+        OpenApiOAuthParser? oauthParser = null,
+        OAuthConfigurationStore? oauthStore = null)
     {
         _serviceProvider = serviceProvider;
         _options = options;
@@ -105,12 +105,16 @@ public class McpifyServiceRegistrar
             try
             {
                 var document = await _openApiProvider.LoadAsync(source);
-                
-                var oauthConfig = _oauthParser.Parse(document);
-                if (oauthConfig != null)
+
+                // Only parse OAuth if auth services are registered
+                if (_oauthParser is not null && _oauthStore is not null)
                 {
-                    _oauthStore.AddConfiguration(oauthConfig);
-                    _logger.LogInformation("[MCPify] Discovered OAuth configuration in {Source}", source);
+                    var oauthConfig = _oauthParser.Parse(document);
+                    if (oauthConfig != null)
+                    {
+                        _oauthStore.AddConfiguration(oauthConfig);
+                        _logger.LogInformation("[MCPify] Discovered OAuth configuration in {Source}", source);
+                    }
                 }
 
                 var operations = _openApiProvider.GetOperations(document);

@@ -5,11 +5,17 @@
 
 **MCPify** is a .NET library that bridges the gap between your existing ASP.NET Core APIs (or external OpenAPI/Swagger specs) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It allows you to expose API operations as MCP tools that can be consumed by AI assistants like Claude Desktop, ensuring seamless integration with your existing services.
 
-> **Latest Release:** v0.0.13-preview - Now with flexible token provider architecture and client-managed authentication!
+> **Latest Release:** v0.0.14-preview - Modular service registration with separate core and authentication!
 
 ## What's New
 
-### v0.0.13-preview (Latest - Jan 27, 2026)
+### v0.0.14-preview (Latest)
+-   **Modular Service Registration**: Split `AddMcpify()` into `AddMcpifyCore()` + `AddMcpifyAuthentication()` for granular control
+-   **Lightweight Core Mode**: Use `AddMcpifyCore()` alone when using `TokenSource.Client` or `TokenSource.None` to avoid unnecessary auth overhead
+-   **Backward Compatible**: Existing `AddMcpify()` calls continue to work unchanged
+-   **Nullable OAuth Dependencies**: `McpifyServiceRegistrar` now gracefully handles missing OAuth services
+
+### v0.0.13-preview (Jan 27, 2026)
 -   **Flexible Token Provider Architecture**: New `ITokenProvider` abstraction separates token acquisition from token attachment
 -   **Client-Managed Authentication**: Native support for MCP clients providing tokens via `TokenSource.Client`
 -   **TokenSource Configuration**: Explicit control over token sourcing with `Server`, `Client`, `Both`, or `None` options
@@ -137,6 +143,113 @@ To use your MCPify app with [Claude Desktop](https://claude.ai/download), edit y
 ```
 
 > **Note:** When using `dotnet run`, ensure your application does not print build logs to stdout, as this corrupts the MCP JSON-RPC protocol. You can suppress logs or publish your app as a single-file executable for a cleaner setup.
+
+## Modular Service Registration
+
+MCPify provides flexible service registration options to match your authentication needs. You can choose between the full-featured `AddMcpify()` or use the granular `AddMcpifyCore()` and `AddMcpifyAuthentication()` methods.
+
+### Core Only (No Auth Overhead)
+
+Use `AddMcpifyCore()` when your MCP client handles authentication or when no authentication is needed:
+
+```csharp
+// Lightweight setup for client-managed auth or public APIs
+builder.Services.AddMcpifyCore(options =>
+{
+    options.Transport = McpTransportType.Stdio;
+
+    // Client provides tokens - no server-side auth needed
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.github.com",
+        OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
+        TokenSource = TokenSource.Client
+    });
+
+    // Or for public APIs with no auth
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.publicapis.org",
+        OpenApiUrl = "https://api.publicapis.org/swagger.json",
+        TokenSource = TokenSource.None
+    });
+});
+```
+
+This registers only essential services:
+- `McpifyOptions`, `McpServerPrimitiveCollection`, `McpifyServiceRegistrar`
+- `ISessionMap`, `IMcpContextAccessor`
+- MCP Server transport (Stdio/Http)
+- `HttpClient`, `IOpenApiProvider`, `IJsonSchemaGenerator`, `IEndpointMetadataProvider`
+
+### Full Stack (Backward Compatible)
+
+Use `AddMcpify()` for the complete feature set including server-side OAuth:
+
+```csharp
+// Full setup with server-managed authentication
+builder.Services.AddMcpify(options =>
+{
+    options.Transport = McpTransportType.Http;
+
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        TokenSource = TokenSource.Server,  // or TokenSource.Both
+        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+    });
+});
+```
+
+This is equivalent to calling both methods:
+```csharp
+builder.Services.AddMcpifyCore(options => { ... });
+builder.Services.AddMcpifyAuthentication();
+```
+
+### Core + Selective Authentication
+
+For advanced scenarios, register core first then add authentication:
+
+```csharp
+builder.Services.AddMcpifyCore(options =>
+{
+    options.Transport = McpTransportType.Http;
+
+    // Mix of auth strategies
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        TokenSource = TokenSource.Both,  // Try client first, fallback to server
+        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+    });
+});
+
+// Add auth services (LoginTool, SessionManagementTool, ISecureTokenStore, etc.)
+builder.Services.AddMcpifyAuthentication();
+```
+
+### Service Registration Breakdown
+
+| Service | AddMcpifyCore | AddMcpifyAuthentication |
+|---------|:-------------:|:-----------------------:|
+| `McpifyOptions` | ✓ | |
+| `McpServerPrimitiveCollection` | ✓ | |
+| `McpifyServiceRegistrar` | ✓ | |
+| `ISessionMap` | ✓ | |
+| `IMcpContextAccessor` | ✓ | |
+| `IOpenApiProvider` | ✓ | |
+| `IJsonSchemaGenerator` | ✓ | |
+| `IEndpointMetadataProvider` | ✓ | |
+| `ISecureTokenStore` | | ✓ |
+| `OpenApiOAuthParser` | | ✓ |
+| `OAuthConfigurationStore` | | ✓ |
+| `LoginTool` | | ✓ |
+| `SessionManagementTool` | | ✓ |
+| `ScopeRequirementHandler` | | ✓ |
+| `McpAuthenticationHandler` | | ✓ |
 
 ## Authentication
 

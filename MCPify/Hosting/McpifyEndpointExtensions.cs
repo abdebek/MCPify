@@ -103,74 +103,79 @@ public static class McpifyEndpointExtensions
             }
         }
 
+        // Get OAuth store once for reuse
+        var oauthStore = services.GetService<OAuthConfigurationStore>();
+
         if (options.Transport == McpTransportType.Http)
         {
             var mcpRoute = app.MapMcp(path);
-            var oauthStore = services.GetService<OAuthConfigurationStore>();
             if (oauthStore?.GetConfigurations().Any() == true)
             {
                 mcpRoute.RequireAuthorization();
             }
         }
 
-        // Map OAuth Protected Resource Metadata
-        app.MapGet("/.well-known/oauth-protected-resource", (OAuthConfigurationStore oauthStore, IServer server, McpifyOptions opts) =>
+        // Map OAuth Protected Resource Metadata only if auth is configured
+        if (oauthStore != null)
         {
-            var configs = oauthStore.GetConfigurations().ToList();
-            if (!configs.Any())
+            app.MapGet("/.well-known/oauth-protected-resource", (OAuthConfigurationStore store, IServer server, McpifyOptions opts) =>
             {
-                return Results.NotFound(new { error = "OAuth not configured" });
-            }
-
-            var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-            var resourceUrl = opts.ResourceUrlOverride;
-            if (string.IsNullOrWhiteSpace(resourceUrl))
-            {
-                resourceUrl = opts.LocalEndpoints?.BaseUrlOverride;
-            }
-
-            if (string.IsNullOrWhiteSpace(resourceUrl))
-            {
-                resourceUrl = addresses?.FirstOrDefault();
-            }
-
-            resourceUrl = (string.IsNullOrWhiteSpace(resourceUrl) ? Constants.DefaultBaseUrl : resourceUrl).TrimEnd('/');
-
-            static IEnumerable<string> ResolveAuthorizationServers(OAuth2Configuration config)
-            {
-                if (Uri.TryCreate(config.AuthorizationUrl, UriKind.Absolute, out var uri))
+                var configs = store.GetConfigurations().ToList();
+                if (!configs.Any())
                 {
-                    yield return uri.GetLeftPart(UriPartial.Authority);
+                    return Results.NotFound(new { error = "OAuth not configured" });
                 }
-            }
 
-            // If any config has AuthorizationServers, only use those; otherwise, fall back to AuthorizationUrl authority.
-            List<string> issuers;
-            if (configs.Any(c => c.AuthorizationServers?.Any() == true))
-            {
-                issuers = configs
-                    .Where(c => c.AuthorizationServers?.Any() == true)
-                    .SelectMany(c => c.AuthorizationServers)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-            else
-            {
-                issuers = configs
-                    .SelectMany(ResolveAuthorizationServers)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
+                var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
+                var resourceUrl = opts.ResourceUrlOverride;
+                if (string.IsNullOrWhiteSpace(resourceUrl))
+                {
+                    resourceUrl = opts.LocalEndpoints?.BaseUrlOverride;
+                }
 
-            return Results.Ok(new
-            {
-                resource = resourceUrl,
-                authorization_servers = issuers,
-                scopes_supported = configs.SelectMany(c => c.Scopes.Keys).Distinct().ToList(),
-                bearer_methods_supported = new[] { "header" } // We only support Bearer header
-            });
-        })
-        .ExcludeFromDescription();
+                if (string.IsNullOrWhiteSpace(resourceUrl))
+                {
+                    resourceUrl = addresses?.FirstOrDefault();
+                }
+
+                resourceUrl = (string.IsNullOrWhiteSpace(resourceUrl) ? Constants.DefaultBaseUrl : resourceUrl).TrimEnd('/');
+
+                static IEnumerable<string> ResolveAuthorizationServers(OAuth2Configuration config)
+                {
+                    if (Uri.TryCreate(config.AuthorizationUrl, UriKind.Absolute, out var uri))
+                    {
+                        yield return uri.GetLeftPart(UriPartial.Authority);
+                    }
+                }
+
+                // If any config has AuthorizationServers, only use those; otherwise, fall back to AuthorizationUrl authority.
+                List<string> issuers;
+                if (configs.Any(c => c.AuthorizationServers?.Any() == true))
+                {
+                    issuers = configs
+                        .Where(c => c.AuthorizationServers?.Any() == true)
+                        .SelectMany(c => c.AuthorizationServers)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+                else
+                {
+                    issuers = configs
+                        .SelectMany(ResolveAuthorizationServers)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+
+                return Results.Ok(new
+                {
+                    resource = resourceUrl,
+                    authorization_servers = issuers,
+                    scopes_supported = configs.SelectMany(c => c.Scopes.Keys).Distinct().ToList(),
+                    bearer_methods_supported = new[] { "header" } // We only support Bearer header
+                });
+            })
+            .ExcludeFromDescription();
+        }
 
         return app;
     }
