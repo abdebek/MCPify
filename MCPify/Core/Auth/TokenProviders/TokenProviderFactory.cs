@@ -6,6 +6,22 @@ namespace MCPify.Core.Auth.TokenProviders;
 public static class TokenProviderFactory
 {
     /// <summary>
+    /// Creates an <see cref="ITokenProvider"/> preferring <paramref name="upstreamAuth"/> when set,
+    /// falling back to the legacy <paramref name="tokenSource"/> path.
+    /// </summary>
+    public static ITokenProvider Create(
+        IServiceProvider serviceProvider,
+        UpstreamAuth? upstreamAuth,
+        TokenSource tokenSource,
+        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
+    {
+        if (upstreamAuth != null)
+            return upstreamAuth.Build(serviceProvider);
+
+        return Create(serviceProvider, tokenSource, authenticationFactory);
+    }
+
+    /// <summary>
     /// Creates an ITokenProvider based on the specified TokenSource and authentication factory.
     /// </summary>
     /// <param name="serviceProvider">Service provider for resolving dependencies</param>

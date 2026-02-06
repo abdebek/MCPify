@@ -168,14 +168,22 @@ public class LocalEndpointsOptions
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 
     /// <summary>
+    /// Configures how MCPify acquires tokens for upstream API calls.
+    /// When set, takes precedence over <see cref="TokenSource"/> and <see cref="AuthenticationFactory"/>.
+    /// </summary>
+    public UpstreamAuth? UpstreamAuth { get; set; }
+
+    /// <summary>
     /// A factory for creating an authentication provider for local endpoints.
     /// </summary>
+    [Obsolete("Use UpstreamAuth.ServerManaged() instead.")]
     public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
     /// Defaults to Both (hybrid) - tries client token first, then server authentication.
     /// </summary>
+    [Obsolete("Use UpstreamAuth instead.")]
     public TokenSource TokenSource { get; set; } = TokenSource.Both;
 }
 
@@ -215,13 +223,21 @@ public class ExternalApiOptions
     public Dictionary<string, string> DefaultHeaders { get; set; } = new();
 
     /// <summary>
+    /// Configures how MCPify acquires tokens for upstream API calls.
+    /// When set, takes precedence over <see cref="TokenSource"/> and <see cref="AuthenticationFactory"/>.
+    /// </summary>
+    public UpstreamAuth? UpstreamAuth { get; set; }
+
+    /// <summary>
     /// A factory for creating an authentication provider for this API.
     /// </summary>
+    [Obsolete("Use UpstreamAuth.ServerManaged() instead.")]
     public Func<IServiceProvider, IAuthenticationProvider>? AuthenticationFactory { get; set; }
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
     /// Defaults to Both (hybrid) - tries client token first, then server authentication.
     /// </summary>
+    [Obsolete("Use UpstreamAuth instead.")]
     public TokenSource TokenSource { get; set; } = TokenSource.Both;
 }

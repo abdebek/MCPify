@@ -151,7 +151,9 @@ public class McpifyServiceRegistrar
                         apiOpts.DefaultHeaders[header.Key] = header.Value;
                     }
 
-                    var tokenProvider = TokenProviderFactory.Create(_serviceProvider, apiOptions.TokenSource, apiOptions.AuthenticationFactory);
+                    #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
+                    var tokenProvider = TokenProviderFactory.Create(_serviceProvider, apiOptions.UpstreamAuth, apiOptions.TokenSource, apiOptions.AuthenticationFactory);
+                    #pragma warning restore CS0618
                     var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, tokenProvider);
                     var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
                     toolCollection.Add(decoratedTool);
@@ -217,11 +219,13 @@ public class McpifyServiceRegistrar
                 DefaultHeaders = _options.LocalEndpoints.DefaultHeaders
             };
 
+            #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
             var effectiveAuthFactory = (descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0)
                 ? _options.LocalEndpoints.AuthenticationFactory
                 : null;
 
-            var tokenProvider = TokenProviderFactory.Create(_serviceProvider, _options.LocalEndpoints.TokenSource, effectiveAuthFactory);
+            var tokenProvider = TokenProviderFactory.Create(_serviceProvider, _options.LocalEndpoints.UpstreamAuth, _options.LocalEndpoints.TokenSource, effectiveAuthFactory);
+            #pragma warning restore CS0618
             var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, tokenProvider);
             var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
             toolCollection.Add(decoratedTool);

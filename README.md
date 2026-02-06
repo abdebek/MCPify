@@ -5,18 +5,22 @@
 
 **MCPify** is a .NET library that bridges the gap between your existing ASP.NET Core APIs (or external OpenAPI/Swagger specs) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It allows you to expose API operations as MCP tools that can be consumed by AI assistants like Claude Desktop, ensuring seamless integration with your existing services.
 
-> **Latest Release:** v0.0.14-preview - Modular service registration with separate core and authentication!
+> **Latest Release:** v0.0.14-preview - Extensible UpstreamAuth abstraction + RFC 8693 Token Exchange!
 
 ## What's New
 
 ### v0.0.14-preview (Latest)
+-   **UpstreamAuth Abstraction**: Replaces the rigid `TokenSource` enum with an extensible class offering static factory methods: `PassThrough()`, `None()`, `ServerManaged()`, `TokenExchange()`, `Fallback()`, and `Custom()`
+-   **RFC 8693 Token Exchange**: New `UpstreamAuth.TokenExchange()` strategy exchanges the MCP client's access token for an upstream API token at a configured token endpoint
+-   **Composable Strategies**: `UpstreamAuth.Fallback()` chains multiple strategies; `UpstreamAuth.Custom()` provides an escape hatch for user-supplied `ITokenProvider` factories
+-   **Migration Path**: When `UpstreamAuth` is set on an options object it takes precedence; when `null` (default) the legacy `TokenSource` path runs
 -   **Modular Service Registration**: Split `AddMcpify()` into `AddMcpifyCore()` + `AddMcpifyAuthentication()` for granular control
 -   **Lightweight Core Mode**: Use `AddMcpifyCore()` alone when using `TokenSource.Client` or `TokenSource.None` to avoid unnecessary auth overhead
 -   **Fixed TokenSource.Client**: HTTP Authorization header is now extracted and forwarded to upstream APIs
 -   **OAuth Discovery in Core**: `OpenApiOAuthParser` and `OAuthConfigurationStore` moved to core for metadata discovery without full auth stack
 -   **Removed BuildServiceProvider Anti-Pattern**: `AddMcpifyAuthentication()` no longer builds an intermediate service provider
 -   **Deployment Risk Documentation**: Clear guidance on `TokenSource` security implications per deployment model
--   **Backward Compatible**: Existing `AddMcpify()` calls continue to work unchanged
+-   **Backward Compatible**: Existing `AddMcpify()` calls and `TokenSource`/`AuthenticationFactory` properties continue to work unchanged (`[Obsolete]` but functional)
 
 ### v0.0.13-preview (Jan 27, 2026)
 -   **Flexible Token Provider Architecture**: New `ITokenProvider` abstraction separates token acquisition from token attachment
@@ -259,7 +263,102 @@ builder.Services.AddMcpifyAuthentication();
 
 MCPify provides comprehensive OAuth 2.0 authentication support with automatic token management, validation, and scope enforcement. You can choose whether MCPify manages authentication (server-side) or your MCP client provides tokens directly (client-side).
 
-### Token Source Configuration
+### UpstreamAuth (Recommended)
+
+`UpstreamAuth` is the recommended way to configure how MCPify acquires tokens for upstream API calls. It replaces the older `TokenSource` enum with an extensible, composable abstraction.
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    // Public API — no auth
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.publicapis.org",
+        OpenApiUrl = "https://api.publicapis.org/swagger.json",
+        UpstreamAuth = UpstreamAuth.None()
+    });
+
+    // Client provides tokens directly
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.github.com",
+        OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
+        UpstreamAuth = UpstreamAuth.PassThrough()
+    });
+
+    // Server manages OAuth flows
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        UpstreamAuth = UpstreamAuth.ServerManaged(sp =>
+            sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>())
+    });
+
+    // Hybrid — try client token first, then server auth
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        UpstreamAuth = UpstreamAuth.Fallback(
+            UpstreamAuth.PassThrough(),
+            UpstreamAuth.ServerManaged(sp =>
+                sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()))
+    });
+});
+```
+
+#### Token Exchange (RFC 8693)
+
+Exchange the MCP client's access token for an upstream API token at an authorization server. Requires `AddMcpifyAuthentication()` for the secure token store:
+
+```csharp
+builder.Services.AddMcpifyCore(options =>
+{
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.internal.com",
+        OpenApiUrl = "https://api.internal.com/swagger.json",
+        UpstreamAuth = UpstreamAuth.TokenExchange(opts =>
+        {
+            opts.TokenEndpoint = "https://auth.example.com/token";
+            opts.ClientId = "mcpify-client";
+            opts.ClientSecret = "secret";
+            opts.Scope = "api.read api.write";
+            opts.Audience = "internal-api";       // RFC 8693
+            opts.Resource = "https://api.internal.com";  // RFC 8707
+        })
+    });
+});
+builder.Services.AddMcpifyAuthentication(); // Required for ISecureTokenStore
+```
+
+#### Custom Token Provider
+
+Escape hatch for advanced scenarios:
+
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.example.com",
+    OpenApiUrl = "https://api.example.com/swagger.json",
+    UpstreamAuth = UpstreamAuth.Custom(sp =>
+        sp.GetRequiredService<MyCustomTokenProvider>())
+});
+```
+
+#### Migration from TokenSource
+
+| Old API | New API |
+|---------|---------|
+| `TokenSource = TokenSource.None` | `UpstreamAuth = UpstreamAuth.None()` |
+| `TokenSource = TokenSource.Client` | `UpstreamAuth = UpstreamAuth.PassThrough()` |
+| `TokenSource = TokenSource.Server` + `AuthenticationFactory = ...` | `UpstreamAuth = UpstreamAuth.ServerManaged(...)` |
+| `TokenSource = TokenSource.Both` + `AuthenticationFactory = ...` | `UpstreamAuth = UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), UpstreamAuth.ServerManaged(...))` |
+
+> **Note:** `TokenSource` and `AuthenticationFactory` are `[Obsolete]` but continue to work. When `UpstreamAuth` is set, it takes precedence.
+
+### Token Source Configuration (Legacy)
 
 MCPify supports flexible token sourcing through the `TokenSource` configuration option. This allows you to control where authentication tokens come from:
 
