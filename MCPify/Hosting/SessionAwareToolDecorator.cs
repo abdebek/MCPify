@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text.Json;
 using MCPify.Core;
 using MCPify.Core.Session;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -74,6 +75,14 @@ public class SessionAwareToolDecorator : McpServerTool
             }
 
             accessor.SessionId = sessionId;
+
+            // Extract access token from HTTP Authorization header (enables TokenSource.Client for HTTP transport)
+            var httpContextAccessor = services.GetService<IHttpContextAccessor>();
+            var authHeader = httpContextAccessor?.HttpContext?.Request?.Headers["Authorization"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(authHeader))
+            {
+                accessor.AccessToken = authHeader;
+            }
         }
 
         return await _innerTool.InvokeAsync(context, token);

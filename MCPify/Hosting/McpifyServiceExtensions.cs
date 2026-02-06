@@ -69,6 +69,7 @@ public static class McpifyServiceExtensions
             serverBuilder.WithHttpTransport();
         }
 
+        services.AddHttpContextAccessor();
         services.AddHttpClient();
 
         services.AddOptions<McpServerOptions>()
@@ -99,6 +100,16 @@ public static class McpifyServiceExtensions
         // Register IMcpContextAccessor and its concrete implementation
         services.AddScoped<IMcpContextAccessor, McpContextAccessor>();
 
+        // Register OAuth discovery services (core - needed by McpifyServiceRegistrar for OpenAPI parsing)
+        services.AddSingleton<OpenApiOAuthParser>();
+
+        var oauthStore = new OAuthConfigurationStore();
+        foreach (var config in opts.OAuthConfigurations)
+        {
+            oauthStore.AddConfiguration(config);
+        }
+        services.AddSingleton(oauthStore);
+
         return services;
     }
 
@@ -110,9 +121,6 @@ public static class McpifyServiceExtensions
     /// <returns>The <see cref="IServiceCollection"/> so that additional calls can be chained.</returns>
     public static IServiceCollection AddMcpifyAuthentication(this IServiceCollection services)
     {
-        // Get the options that should have been registered by AddMcpifyCore
-        var opts = services.BuildServiceProvider().GetService<McpifyOptions>();
-
         // Register ISecureTokenStore
         services.AddSingleton<ISecureTokenStore>(sp =>
         {
@@ -125,18 +133,6 @@ public static class McpifyServiceExtensions
             }
             return new EncryptedFileTokenStore(basePath);
         });
-
-        services.AddSingleton<OpenApiOAuthParser>();
-
-        var oauthStore = new OAuthConfigurationStore();
-        if (opts != null)
-        {
-            foreach (var config in opts.OAuthConfigurations)
-            {
-                oauthStore.AddConfiguration(config);
-            }
-        }
-        services.AddSingleton(oauthStore);
 
         // Register Auth Tools
         services.AddSingleton<McpServerTool, LoginTool>();

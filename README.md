@@ -12,8 +12,11 @@
 ### v0.0.14-preview (Latest)
 -   **Modular Service Registration**: Split `AddMcpify()` into `AddMcpifyCore()` + `AddMcpifyAuthentication()` for granular control
 -   **Lightweight Core Mode**: Use `AddMcpifyCore()` alone when using `TokenSource.Client` or `TokenSource.None` to avoid unnecessary auth overhead
+-   **Fixed TokenSource.Client**: HTTP Authorization header is now extracted and forwarded to upstream APIs
+-   **OAuth Discovery in Core**: `OpenApiOAuthParser` and `OAuthConfigurationStore` moved to core for metadata discovery without full auth stack
+-   **Removed BuildServiceProvider Anti-Pattern**: `AddMcpifyAuthentication()` no longer builds an intermediate service provider
+-   **Deployment Risk Documentation**: Clear guidance on `TokenSource` security implications per deployment model
 -   **Backward Compatible**: Existing `AddMcpify()` calls continue to work unchanged
--   **Nullable OAuth Dependencies**: `McpifyServiceRegistrar` now gracefully handles missing OAuth services
 
 ### v0.0.13-preview (Jan 27, 2026)
 -   **Flexible Token Provider Architecture**: New `ITokenProvider` abstraction separates token acquisition from token attachment
@@ -240,12 +243,13 @@ builder.Services.AddMcpifyAuthentication();
 | `McpifyServiceRegistrar` | ✓ | |
 | `ISessionMap` | ✓ | |
 | `IMcpContextAccessor` | ✓ | |
+| `IHttpContextAccessor` | ✓ | |
 | `IOpenApiProvider` | ✓ | |
 | `IJsonSchemaGenerator` | ✓ | |
 | `IEndpointMetadataProvider` | ✓ | |
+| `OpenApiOAuthParser` | ✓ | |
+| `OAuthConfigurationStore` | ✓ | |
 | `ISecureTokenStore` | | ✓ |
-| `OpenApiOAuthParser` | | ✓ |
-| `OAuthConfigurationStore` | | ✓ |
 | `LoginTool` | | ✓ |
 | `SessionManagementTool` | | ✓ |
 | `ScopeRequirementHandler` | | ✓ |
@@ -360,6 +364,25 @@ builder.Services.AddMcpify(options =>
 | `Server` | MCPify manages authentication (OAuth flows, API keys, etc.) - explicit server-only auth |
 | `Client` | MCP client provides tokens directly via the protocol - explicit client-only auth |
 | `None` | No authentication required |
+
+### Deployment-Specific Auth Considerations
+
+The security implications of `TokenSource` depend on your deployment model:
+
+| Deployment | Transport | `TokenSource.Client` | `TokenSource.Server` | `TokenSource.Both` |
+|------------|-----------|---------------------|---------------------|-------------------|
+| Local / single-user | Stdio | Safe | Safe | Safe |
+| Local / single-user | Http | Safe | Safe | Safe |
+| Hosted / multi-user | Http | Use with caution | Recommended | Use with caution |
+
+**Local / Stdio deployments:** All `TokenSource` options are equally safe. The MCP client and server share the same trust boundary (same machine, same user). `TokenSource.Client` is a good choice here to avoid server-side auth overhead.
+
+**Hosted / multi-user deployments:** `TokenSource.Server` is the recommended default. When MCP auth is enabled alongside `TokenSource.Client`, the client's MCP access token is forwarded as-is to the upstream API. This conflates two separate authentication planes (MCP client-to-server vs MCPify-to-upstream-API) and introduces risks:
+-   Tokens may be logged, cached, or replayed by untrusted clients
+-   The MCP access token may not have the correct audience/scopes for the upstream API
+-   You lose control over token lifecycle and refresh
+
+If you need `TokenSource.Client` in a hosted setup, ensure your upstream API validates tokens independently and that your MCP clients are trusted.
 
 ### Enabling OAuth
 
