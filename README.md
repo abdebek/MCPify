@@ -504,6 +504,19 @@ services.AddScoped<OAuthAuthorizationCodeAuthentication>(sp => {
 services.AddLoginTool(sp => new LoginTool());
 ```
 
+### Manual Client Registration vs DCR
+
+For server-managed upstream OAuth in MCPify, dynamic client registration is not required.
+You can register your OAuth client manually with your authorization server and configure:
+
+- `client_id`
+- `client_secret`
+- authorization endpoint
+- token endpoint
+- redirect URI handled by your app callback
+
+Enable DCR only if your MCP client requires it to connect (for example, ChatGPT over HTTP).
+
 ### The Login Flow
 
 1.  The user asks Claude: *"Please login"* or uses a tool that requires auth.

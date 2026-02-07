@@ -69,14 +69,22 @@ On Stdio transport, MCPify tries pass-through first and falls back to server-man
   - `Mcpify:AllowClientTokenPassthrough = true`
 - This mode is intended for local/dev scenarios and is unsafe for hosted multi-user deployments.
 
-## Dynamic Client Registration
+## Dynamic Client Registration  (DCR - Optional)
 
-Some MCP clients (including ChatGPT) require OAuth dynamic client registration.
-The sample provides:
+- If your MCP client supports manual OAuth client configuration, you can use a pre-registered client and skip DCR.
+- If your MCP client requires DCR (for example ChatGPT over HTTP), keep DCR enabled.
+
+The sample includes DCR support out of the box:
 
 - Discovery document with `registration_endpoint`
 - Registration endpoint at `POST https://localhost:5001/connect/register`
 - Confidential client registration (`client_secret_basic`) with PKCE
+
+For manual registration, use:
+
+- Authorization endpoint: `https://localhost:5001/connect/authorize`
+- Token endpoint: `https://localhost:5001/connect/token`
+- Redirect URI: `https://localhost:5001/auth/callback` (or your configured callback)
 
 ## Claude Desktop (Stdio)
 
