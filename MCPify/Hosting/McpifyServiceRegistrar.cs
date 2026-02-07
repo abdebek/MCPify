@@ -153,9 +153,9 @@ public class McpifyServiceRegistrar
                         apiOpts.DefaultHeaders[header.Key] = header.Value;
                     }
 
-                    #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
-                    var tokenProvider = TokenProviderFactory.Create(_serviceProvider, apiOptions.UpstreamAuth, apiOptions.TokenSource, apiOptions.AuthenticationFactory);
-                    #pragma warning restore CS0618
+                    var hasSecurity = descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0;
+                    var effectiveUpstreamAuth = hasSecurity ? apiOptions.UpstreamAuth : UpstreamAuth.None();
+                    var tokenProvider = TokenProviderFactory.Create(_serviceProvider, effectiveUpstreamAuth);
                     var tool = new OpenApiProxyTool(descriptor, apiOptions.ApiBaseUrl, httpClient, _schema, apiOpts, tokenProvider);
                     var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
                     toolCollection.Add(decoratedTool);
@@ -223,12 +223,8 @@ public class McpifyServiceRegistrar
 
             var hasSecurity = descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0;
 
-            #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
-            var effectiveUpstreamAuth = hasSecurity ? _options.LocalEndpoints.UpstreamAuth : null;
-            var effectiveAuthFactory = hasSecurity ? _options.LocalEndpoints.AuthenticationFactory : null;
-
-            var tokenProvider = TokenProviderFactory.Create(_serviceProvider, effectiveUpstreamAuth, _options.LocalEndpoints.TokenSource, effectiveAuthFactory);
-            #pragma warning restore CS0618
+            var effectiveUpstreamAuth = hasSecurity ? _options.LocalEndpoints.UpstreamAuth : UpstreamAuth.None();
+            var tokenProvider = TokenProviderFactory.Create(_serviceProvider, effectiveUpstreamAuth);
             var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, _schema, localOpts, tokenProvider);
             var decoratedTool = new SessionAwareToolDecorator(tool, _serviceProvider);
             toolCollection.Add(decoratedTool);

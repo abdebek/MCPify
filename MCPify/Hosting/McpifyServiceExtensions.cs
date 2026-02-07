@@ -16,6 +16,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.Extensions.Hosting;
 
 namespace MCPify.Hosting;
 
@@ -40,7 +41,7 @@ public static class McpifyServiceExtensions
 
     /// <summary>
     /// Adds only the core MCPify services without authentication.
-    /// Use this when your MCP client handles authentication (TokenSource.Client) or when no authentication is needed (TokenSource.None).
+    /// Use this when your MCP client handles authentication via UpstreamAuth.PassThrough() or no authentication is needed via UpstreamAuth.None().
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/> to add services to.</param>
     /// <param name="configure">A delegate to configure the <see cref="McpifyOptions"/>.</param>
@@ -54,6 +55,7 @@ public static class McpifyServiceExtensions
         UpstreamAuthTransportPolicy.NormalizeAndValidate(opts);
 
         services.AddSingleton(opts);
+        services.AddHostedService<HttpPassThroughWarningHostedService>();
 
         services.AddSingleton<McpServerPrimitiveCollection<McpServerTool>>();
         services.AddSingleton<McpifyServiceRegistrar>();

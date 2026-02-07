@@ -55,10 +55,9 @@ internal static class UpstreamAuthTransportPolicy
         }
     }
 
-#pragma warning disable CS0618
     private static void NormalizeDefaults(LocalEndpointsOptions options, McpTransportType transport)
     {
-        if (options.UpstreamAuth != null || options.AuthenticationFactory != null || options.TokenSource != TokenSource.Both)
+        if (options.UpstreamAuth != null)
         {
             return;
         }
@@ -68,7 +67,7 @@ internal static class UpstreamAuthTransportPolicy
 
     private static void NormalizeDefaults(ExternalApiOptions options, McpTransportType transport)
     {
-        if (options.UpstreamAuth != null || options.AuthenticationFactory != null || options.TokenSource != TokenSource.Both)
+        if (options.UpstreamAuth != null)
         {
             return;
         }
@@ -79,24 +78,14 @@ internal static class UpstreamAuthTransportPolicy
     private static bool HasPassThroughFirstSelection(McpifyOptions options)
     {
         if (options.LocalEndpoints is { Enabled: true } localEndpoints &&
-            UsesPassThroughFirst(localEndpoints.UpstreamAuth, localEndpoints.TokenSource))
+            localEndpoints.UpstreamAuth is not null &&
+            IsPassThroughFirst(localEndpoints.UpstreamAuth))
         {
             return true;
         }
 
-        return options.ExternalApis.Any(api => UsesPassThroughFirst(api.UpstreamAuth, api.TokenSource));
+        return options.ExternalApis.Any(api => api.UpstreamAuth is not null && IsPassThroughFirst(api.UpstreamAuth));
     }
-
-    private static bool UsesPassThroughFirst(UpstreamAuth? upstreamAuth, TokenSource tokenSource)
-    {
-        if (upstreamAuth != null)
-        {
-            return IsPassThroughFirst(upstreamAuth);
-        }
-
-        return tokenSource is TokenSource.Client or TokenSource.Both;
-    }
-#pragma warning restore CS0618
 
     private static UpstreamAuth CreateTransportDefault(McpTransportType transport)
     {

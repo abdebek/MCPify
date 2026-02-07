@@ -92,12 +92,8 @@ public static class McpifyEndpointExtensions
 
                             var hasSecurity = descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0;
 
-                            #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
-                            var effectiveUpstreamAuth = hasSecurity ? options.LocalEndpoints.UpstreamAuth : null;
-                            var effectiveAuthFactory = hasSecurity ? options.LocalEndpoints.AuthenticationFactory : null;
-
-                            var tokenProvider = TokenProviderFactory.Create(services, effectiveUpstreamAuth, options.LocalEndpoints.TokenSource, effectiveAuthFactory);
-                            #pragma warning restore CS0618
+                            var effectiveUpstreamAuth = hasSecurity ? options.LocalEndpoints.UpstreamAuth : UpstreamAuth.None();
+                            var tokenProvider = TokenProviderFactory.Create(services, effectiveUpstreamAuth);
                             var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, tokenProvider);
                             toolCollection.Add(tool);
                             count++;

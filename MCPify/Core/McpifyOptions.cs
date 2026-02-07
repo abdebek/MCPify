@@ -194,7 +194,7 @@ public class LocalEndpointsOptions
     /// Legacy compatibility path used when <see cref="UpstreamAuth"/> is not configured.
     /// </summary>
     [Obsolete("Use UpstreamAuth instead.")]
-    public TokenSource TokenSource { get; set; } = TokenSource.Both;
+    public TokenSource TokenSource { get; set; } = TokenSource.Server;
 }
 
 /// <summary>
@@ -249,5 +249,5 @@ public class ExternalApiOptions
     /// Legacy compatibility path used when <see cref="UpstreamAuth"/> is not configured.
     /// </summary>
     [Obsolete("Use UpstreamAuth instead.")]
-    public TokenSource TokenSource { get; set; } = TokenSource.Both;
+    public TokenSource TokenSource { get; set; } = TokenSource.Server;
 }

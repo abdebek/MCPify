@@ -1,33 +1,29 @@
 namespace MCPify.Core.Auth.TokenProviders;
 
 /// <summary>
-/// Factory for creating ITokenProvider instances based on TokenSource configuration.
+/// Factory for creating ITokenProvider instances.
 /// </summary>
 public static class TokenProviderFactory
 {
     /// <summary>
-    /// Creates an <see cref="ITokenProvider"/> preferring <paramref name="upstreamAuth"/> when set,
-    /// falling back to the legacy <paramref name="tokenSource"/> path.
+    /// Creates an <see cref="ITokenProvider"/> from an explicit <see cref="UpstreamAuth"/> strategy.
     /// </summary>
     public static ITokenProvider Create(
         IServiceProvider serviceProvider,
-        UpstreamAuth? upstreamAuth,
-        TokenSource tokenSource,
-        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory = null)
+        UpstreamAuth? upstreamAuth)
     {
-        if (upstreamAuth != null)
-            return upstreamAuth.Build(serviceProvider);
-
-        return Create(serviceProvider, tokenSource, authenticationFactory);
+        return upstreamAuth?.Build(serviceProvider) ?? NoTokenProvider.Instance;
     }
 
     /// <summary>
-    /// Creates an ITokenProvider based on the specified TokenSource and authentication factory.
+    /// Legacy factory for creating an <see cref="ITokenProvider"/> from <see cref="TokenSource"/>.
+    /// New code should use <see cref="Create(IServiceProvider,UpstreamAuth?)"/>.
     /// </summary>
     /// <param name="serviceProvider">Service provider for resolving dependencies</param>
     /// <param name="tokenSource">The token source configuration</param>
     /// <param name="authenticationFactory">Optional authentication factory for server-managed auth</param>
     /// <returns>An ITokenProvider instance</returns>
+    [Obsolete("Use Create(IServiceProvider, UpstreamAuth?) instead.")]
     public static ITokenProvider Create(
         IServiceProvider serviceProvider,
         TokenSource tokenSource,

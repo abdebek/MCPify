@@ -3,6 +3,7 @@ using MCPify.Core.Auth;
 using MCPify.Core.Auth.TokenProviders;
 using MCPify.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace MCPify.Tests.Unit;
 
@@ -22,27 +23,6 @@ public class UpstreamAuthTransportPolicyTests
                     Enabled = true,
                     UpstreamAuth = UpstreamAuth.PassThrough()
                 };
-            }));
-
-        Assert.Contains("AllowClientTokenPassthrough", exception.Message);
-    }
-
-    [Fact]
-    public void AddMcpify_Throws_WhenHttpLegacyClientTokenConfiguredWithoutOptIn()
-    {
-        var services = new ServiceCollection();
-
-        var exception = Assert.Throws<InvalidOperationException>(() =>
-            services.AddMcpify(options =>
-            {
-                options.Transport = McpTransportType.Http;
-#pragma warning disable CS0618
-                options.LocalEndpoints = new LocalEndpointsOptions
-                {
-                    Enabled = true,
-                    TokenSource = TokenSource.Client
-                };
-#pragma warning restore CS0618
             }));
 
         Assert.Contains("AllowClientTokenPassthrough", exception.Message);
@@ -144,5 +124,25 @@ public class UpstreamAuthTransportPolicyTests
             }));
 
         Assert.Contains("AllowClientTokenPassthrough", exception.Message);
+    }
+
+    [Fact]
+    public void AddMcpify_RegistersStartupWarningHostedService()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+            options.LocalEndpoints = new LocalEndpointsOptions
+            {
+                Enabled = true
+            };
+        });
+
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IHostedService) &&
+                          descriptor.ImplementationType?.Name == "HttpPassThroughWarningHostedService");
     }
 }
