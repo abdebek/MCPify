@@ -64,6 +64,7 @@ Note: the sample enables session fallback for server-managed auth so clients tha
 
 Client token pass-through on HTTP is disabled by default.
 On Stdio transport, MCPify tries pass-through first and falls back to server-managed auth for local workflows.
+In this sample code, `UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), serverManagedAuth)` is used for Stdio by default, and only used for HTTP when the allow-flag is enabled.
 
 - Enable only when you explicitly want it:
   - `Mcpify:AllowClientTokenPassthrough = true`

@@ -3,6 +3,7 @@ using MCPify.Core.Session;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace MCPify.Tools;
@@ -32,7 +33,7 @@ public class SessionManagementTool : McpServerTool
 
         if (string.IsNullOrEmpty(sessionId))
         {
-            sessionId = Guid.NewGuid().ToString("N");
+            sessionId = CreateSessionId();
         }
 
         if (sessionMap != null)
@@ -56,4 +57,11 @@ public class SessionManagementTool : McpServerTool
         IsError = true,
         Content = new[] { new TextContentBlock { Text = message } }
     };
+
+    private static string CreateSessionId()
+    {
+        Span<byte> bytes = stackalloc byte[32];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+    }
 }

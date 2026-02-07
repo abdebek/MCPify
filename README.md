@@ -308,6 +308,18 @@ builder.Services.AddMcpify(options =>
 });
 ```
 
+`UpstreamAuth.PassThrough()` (or `UpstreamAuth.Fallback()` with `PassThrough()` first) on HTTP transport requires explicit opt-in:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.Transport = McpTransportType.Http;
+    options.AllowClientTokenPassthrough = true;
+});
+```
+
+Without `AllowClientTokenPassthrough = true`, MCPify fails fast at startup for HTTP.
+
 #### Token Exchange (RFC 8693)
 
 Exchange the MCP client's access token for an upstream API token at an authorization server. Requires `AddMcpifyAuthentication()` for the secure token store:

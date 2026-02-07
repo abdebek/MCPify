@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using MCPify.Core;
 using MCPify.Core.Session;
 using MCPify.Tools;
@@ -34,7 +35,29 @@ public class SessionManagementToolTests
         Assert.Equal("session-from-connect", sessionMap.ResolvePrincipal(Constants.DefaultSessionId));
     }
 
-    private static RequestContext<CallToolRequestParams> CreateContext(IServiceProvider services, string serverSessionId)
+    [Fact]
+    public async Task Connect_GeneratesSecureSessionId_WhenServerSessionMissing()
+    {
+        var services = new ServiceCollection();
+        var accessor = new MockMcpContextAccessor();
+        var sessionMap = new InMemorySessionMap();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<ISessionMap>(sessionMap);
+        var provider = services.BuildServiceProvider();
+
+        var tool = new SessionManagementTool();
+        var context = CreateContext(provider, null);
+
+        var result = await tool.InvokeAsync(context, CancellationToken.None);
+
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Equal(43, text.Length);
+        Assert.Matches(new Regex("^[A-Za-z0-9_-]{43}$"), text);
+        Assert.Equal(text, accessor.SessionId);
+        Assert.Equal(text, sessionMap.ResolvePrincipal(Constants.DefaultSessionId));
+    }
+
+    private static RequestContext<CallToolRequestParams> CreateContext(IServiceProvider services, string? serverSessionId)
     {
         var mockServer = new Mock<McpServer>();
         mockServer.SetupGet(s => s.Services).Returns(services);
