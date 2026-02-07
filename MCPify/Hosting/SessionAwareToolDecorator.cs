@@ -49,6 +49,8 @@ public class SessionAwareToolDecorator : McpServerTool
         try
         {
             var sessionId = context.Server?.SessionId;
+            var options = services.GetService<McpifyOptions>();
+            var sessionMap = services.GetService<ISessionMap>();
 
             if (string.IsNullOrEmpty(sessionId) && context.Params?.Arguments != null)
             {
@@ -66,7 +68,17 @@ public class SessionAwareToolDecorator : McpServerTool
                 }
             }
 
-            var sessionMap = services.GetService<ISessionMap>();
+            if (string.IsNullOrEmpty(sessionId) &&
+                options?.Transport == McpTransportType.Stdio &&
+                sessionMap != null)
+            {
+                var bridgedSession = sessionMap.ResolvePrincipal(Constants.DefaultSessionId);
+                if (!string.Equals(bridgedSession, Constants.DefaultSessionId, StringComparison.Ordinal))
+                {
+                    sessionId = bridgedSession;
+                }
+            }
+
             if (sessionMap != null && !string.IsNullOrEmpty(sessionId))
             {
                 sessionId = sessionMap.ResolvePrincipal(sessionId);

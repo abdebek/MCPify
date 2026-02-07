@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
+using MCPify.Core;
 using MCPify.Core.Auth.DeviceCode;
 using MCPify.Core.Auth.OAuth;
 
@@ -178,5 +179,43 @@ public class OAuthE2ETests : IAsyncLifetime
                       ?? principal.FindFirst(ClaimTypes.Name)?.Value;
 
         Assert.Equal("test-user", subject);
+    }
+
+    [Fact]
+    public async Task HandleAuthorizationCallback_SavesDefaultSessionToken_WhenFallbackEnabled()
+    {
+        var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor();
+
+        var auth = new OAuthAuthorizationCodeAuthentication(
+            "client_id",
+            _provider.AuthorizationEndpoint,
+            _provider.TokenEndpoint,
+            "scope",
+            tokenStore,
+            accessor,
+            httpClient: _provider.CreateClient(),
+            redirectUri: "http://localhost/callback",
+            allowDefaultSessionFallback: true
+        );
+
+        var authUrl = auth.BuildAuthorizationUrl(accessor.SessionId!);
+
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        var browser = new HttpClient(handler);
+        var authResponse = await browser.GetAsync(authUrl);
+
+        Assert.Equal(HttpStatusCode.Redirect, authResponse.StatusCode);
+        var callbackUrl = authResponse.Headers.Location!;
+
+        var query = QueryHelpers.ParseQuery(callbackUrl.Query);
+        var code = query["code"].ToString();
+        var state = query["state"].ToString();
+
+        var tokenData = await auth.HandleAuthorizationCallbackAsync(code, state);
+
+        var defaultToken = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, "OAuth");
+        Assert.NotNull(defaultToken);
+        Assert.Equal(tokenData.AccessToken, defaultToken!.AccessToken);
     }
 }

@@ -26,12 +26,18 @@ public class SessionManagementTool : McpServerTool
     public override async ValueTask<CallToolResult> InvokeAsync(RequestContext<CallToolRequestParams> context, CancellationToken token)
     {
         var accessor = context.Services?.GetService<IMcpContextAccessor>();
+        var sessionMap = context.Services?.GetService<ISessionMap>();
 
         var sessionId = context.Server?.SessionId;
 
         if (string.IsNullOrEmpty(sessionId))
         {
             sessionId = Guid.NewGuid().ToString("N");
+        }
+
+        if (sessionMap != null)
+        {
+            sessionMap.UpgradeSession(Constants.DefaultSessionId, sessionId);
         }
 
         if (accessor != null)

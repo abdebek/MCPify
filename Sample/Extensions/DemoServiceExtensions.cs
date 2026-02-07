@@ -127,7 +127,7 @@ public static class DemoServiceExtensions
         var transport = configuration.GetValue<McpTransportType>("Mcpify:Transport", McpTransportType.Stdio);
         var allowClientTokenPassthrough = configuration.GetValue<bool>("Mcpify:AllowClientTokenPassthrough");
         var demoOptions = configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
-        var allowFallback = transport == McpTransportType.Stdio;
+        var allowFallback = true;
         var serverManagedAuth = UpstreamAuth.ServerManaged(sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>());
 
         services.AddSingleton<OAuthAuthorizationCodeAuthentication>(sp =>
@@ -179,7 +179,7 @@ public static class DemoServiceExtensions
                     !descriptor.Route.StartsWith("/connect") &&
                     !descriptor.Route.StartsWith("/auth"),
                 UpstreamAuth = transport == McpTransportType.Stdio
-                    ? UpstreamAuth.PassThrough()
+                    ? UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), serverManagedAuth)
                     : allowClientTokenPassthrough
                         ? UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), serverManagedAuth)
                         : serverManagedAuth

@@ -113,26 +113,38 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
             throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
         }
 
-        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _oauthProviderName, cancellationToken);
-
-        if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
+        foreach (var lookupKey in ResolveTokenLookupKeys(sessionId))
         {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
-            return;
-        }
+            var tokenData = await _secureTokenStore.GetTokenAsync(lookupKey, _oauthProviderName, cancellationToken);
 
-        if (tokenData?.RefreshToken != null)
-        {
-            try
+            if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
             {
-                tokenData = await RefreshTokenAsync(tokenData.RefreshToken, sessionId, cancellationToken);
-                await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+                if (!string.Equals(lookupKey, sessionId, StringComparison.Ordinal))
+                {
+                    await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+                }
+
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 return;
             }
-            catch (Exception)
+
+            if (tokenData?.RefreshToken != null)
             {
-                await _secureTokenStore.DeleteTokenAsync(sessionId, _oauthProviderName, cancellationToken);
+                try
+                {
+                    tokenData = await RefreshTokenAsync(tokenData.RefreshToken, lookupKey, cancellationToken);
+                    await _secureTokenStore.SaveTokenAsync(lookupKey, _oauthProviderName, tokenData, cancellationToken);
+                    if (!string.Equals(lookupKey, sessionId, StringComparison.Ordinal))
+                    {
+                        await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+                    }
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
+                    return;
+                }
+                catch (Exception)
+                {
+                    await _secureTokenStore.DeleteTokenAsync(lookupKey, _oauthProviderName, cancellationToken);
+                }
             }
         }
 
@@ -183,6 +195,10 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         }
         
         await _secureTokenStore.SaveTokenAsync(storageKey, _oauthProviderName, tokenData, cancellationToken);
+        if (_allowDefaultSessionFallback && !string.Equals(storageKey, Constants.DefaultSessionId, StringComparison.Ordinal))
+        {
+            await _secureTokenStore.SaveTokenAsync(Constants.DefaultSessionId, _oauthProviderName, tokenData, cancellationToken);
+        }
 
         if (_usePkce)
         {
@@ -190,6 +206,42 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         }
 
         return tokenData;
+    }
+
+    private IEnumerable<string> ResolveTokenLookupKeys(string sessionId)
+    {
+        var keys = new List<string>();
+        AddLookupKey(keys, sessionId);
+
+        if (_sessionMap != null)
+        {
+            AddLookupKey(keys, _sessionMap.ResolvePrincipal(sessionId));
+        }
+
+        if (_allowDefaultSessionFallback)
+        {
+            AddLookupKey(keys, Constants.DefaultSessionId);
+
+            if (_sessionMap != null)
+            {
+                AddLookupKey(keys, _sessionMap.ResolvePrincipal(Constants.DefaultSessionId));
+            }
+        }
+
+        return keys;
+    }
+
+    private static void AddLookupKey(List<string> keys, string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        if (!keys.Contains(key, StringComparer.Ordinal))
+        {
+            keys.Add(key);
+        }
     }
 
     private string? ExtractIdToken(TokenData tokenData)

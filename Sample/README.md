@@ -58,10 +58,12 @@ For protected tools like `api_get_api_secrets`:
 5. MCPify callback stores token server-side.
 6. Retry the protected tool call.
 
+Note: the sample enables session fallback for server-managed auth so clients that rotate MCP session IDs between calls still work after login.
+
 ## Pass-Through Opt-In (HTTP)
 
 Client token pass-through on HTTP is disabled by default.
-On Stdio transport, pass-through is allowed by default for local workflows.
+On Stdio transport, MCPify tries pass-through first and falls back to server-managed auth for local workflows.
 
 - Enable only when you explicitly want it:
   - `Mcpify:AllowClientTokenPassthrough = true`

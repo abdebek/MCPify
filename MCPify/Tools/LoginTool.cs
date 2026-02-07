@@ -1,6 +1,7 @@
 using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.OAuth;
+using MCPify.Core.Session;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -48,10 +49,10 @@ public class LoginTool : McpServerTool
             sessionId = accessor.SessionId;
         }
 
-        // 3. Backend Fallback: Generate a default random session if none exists
+        // 3. Backend fallback: use a stable default session if none exists
         if (string.IsNullOrEmpty(sessionId))
         {
-            sessionId = Guid.NewGuid().ToString("N");
+            sessionId = Constants.DefaultSessionId;
             if (accessor != null)
             {
                 accessor.SessionId = sessionId;
@@ -62,7 +63,13 @@ public class LoginTool : McpServerTool
 
         var auth = context.Services!.GetRequiredService<OAuthAuthorizationCodeAuthentication>();
         var tokenStore = context.Services!.GetRequiredService<ISecureTokenStore>();
+        var sessionMap = context.Services!.GetService<ISessionMap>();
         var options = context.Services!.GetService<McpifyOptions>() ?? new McpifyOptions();
+
+        if (sessionMap != null)
+        {
+            sessionMap.UpgradeSession(Constants.DefaultSessionId, sessionId);
+        }
 
         var authUrl = auth.BuildAuthorizationUrl(sessionId);
         var browserOpened = false;
@@ -97,6 +104,12 @@ public class LoginTool : McpServerTool
             var tokenData = await tokenStore.GetTokenAsync(sessionId, "OAuth", token);
             if (tokenData != null && !string.IsNullOrEmpty(tokenData.AccessToken))
             {
+                 if (options.Transport == McpTransportType.Stdio &&
+                     !string.Equals(sessionId, Constants.DefaultSessionId, StringComparison.Ordinal))
+                 {
+                     await tokenStore.SaveTokenAsync(Constants.DefaultSessionId, "OAuth", tokenData, token);
+                 }
+
                  logger?.LogInformation("Login successful for session {SessionId}", sessionId);
                  return new CallToolResult
                 {

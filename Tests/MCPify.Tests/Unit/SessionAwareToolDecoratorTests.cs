@@ -44,13 +44,36 @@ public class SessionAwareToolDecoratorTests
         Assert.Null(accessor.AccessToken);
     }
 
+    [Fact]
+    public async Task InvokeAsync_UsesBridgedDefaultSession_InStdio_WhenSessionMissing()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        var sessionMap = new MCPify.Core.Session.InMemorySessionMap();
+        sessionMap.UpgradeSession(Constants.DefaultSessionId, "bridged-session");
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+        services.AddSingleton<MCPify.Core.Session.ISessionMap>(sessionMap);
+        services.AddSingleton(new McpifyOptions { Transport = McpTransportType.Stdio });
+
+        var provider = services.BuildServiceProvider();
+        var innerTool = new ContextProbeTool(accessor);
+        var decorator = new SessionAwareToolDecorator(innerTool, provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, null), CancellationToken.None);
+
+        Assert.Equal("bridged-session|(null)", ReadText(result));
+    }
+
     private static string ReadText(CallToolResult result)
     {
         var block = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
         return block.Text;
     }
 
-    private static RequestContext<CallToolRequestParams> CreateContext(IServiceProvider services, string sessionId)
+    private static RequestContext<CallToolRequestParams> CreateContext(IServiceProvider services, string? sessionId)
     {
         var mockServer = new Mock<McpServer>();
         mockServer.SetupGet(s => s.Services).Returns(services);
@@ -64,13 +87,16 @@ public class SessionAwareToolDecoratorTests
 
         var context = (RequestContext<CallToolRequestParams>)ctor.Invoke(new object?[] { mockServer.Object, jsonRpcRequest });
         context.Services = services;
+        var arguments = new Dictionary<string, JsonElement>();
+        if (!string.IsNullOrEmpty(sessionId))
+        {
+            arguments["sessionId"] = JsonSerializer.SerializeToElement(sessionId);
+        }
+
         context.Params = new CallToolRequestParams
         {
             Name = "probe_context",
-            Arguments = new Dictionary<string, JsonElement>
-            {
-                ["sessionId"] = JsonSerializer.SerializeToElement(sessionId)
-            }
+            Arguments = arguments
         };
 
         return context;

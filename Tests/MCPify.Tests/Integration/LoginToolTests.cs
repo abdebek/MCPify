@@ -115,8 +115,77 @@ public class LoginToolTests
         Assert.Contains("http://auth/authorize?foo=bar", textContent.Text);
     }
 
+    [Fact]
+    public async Task LoginTool_UsesDefaultSessionId_WhenNoSessionIsAvailable()
+    {
+        var services = new ServiceCollection();
+
+        var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor { SessionId = null };
+        var auth = new StubOAuthAuthorization(tokenStore, accessor);
+
+        services.AddSingleton(accessor);
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
+        services.AddSingleton<ISecureTokenStore>(tokenStore);
+        services.AddSingleton<LoginTool>();
+        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Never });
+
+        var provider = services.BuildServiceProvider();
+        var tool = provider.GetRequiredService<LoginTool>();
+
+        var arguments = new Dictionary<string, JsonElement>();
+        var callToolParams = new CallToolRequestParams { Name = "login", Arguments = arguments };
+        var context = CreateContext(callToolParams, provider);
+
+        await tool.InvokeAsync(context, CancellationToken.None);
+
+        Assert.Equal(Constants.DefaultSessionId, auth.LastSessionId);
+        Assert.Equal(Constants.DefaultSessionId, accessor.SessionId);
+    }
+
+    [Fact]
+    public async Task LoginTool_CopiesTokenToDefaultSession_InStdioMode()
+    {
+        var services = new ServiceCollection();
+
+        var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor { SessionId = "session-x" };
+        var auth = new StubOAuthAuthorization(tokenStore, accessor);
+
+        services.AddSingleton(accessor);
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
+        services.AddSingleton<ISecureTokenStore>(tokenStore);
+        services.AddSingleton<LoginTool>();
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Stdio,
+            LoginBrowserBehavior = BrowserLaunchBehavior.Always
+        });
+
+        await tokenStore.SaveTokenAsync("session-x", "OAuth", new TokenData("token-x", "refresh-x", DateTimeOffset.UtcNow.AddMinutes(10)));
+
+        var provider = services.BuildServiceProvider();
+        var tool = provider.GetRequiredService<LoginTool>();
+
+        var arguments = new Dictionary<string, JsonElement>();
+        var callToolParams = new CallToolRequestParams { Name = "login", Arguments = arguments };
+        var context = CreateContext(callToolParams, provider);
+
+        var result = await tool.InvokeAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+
+        var copied = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, "OAuth");
+        Assert.NotNull(copied);
+        Assert.Equal("token-x", copied!.AccessToken);
+    }
+
         private sealed class StubOAuthAuthorization : OAuthAuthorizationCodeAuthentication
         {
+            public string? LastSessionId { get; private set; }
+
             public StubOAuthAuthorization(ISecureTokenStore store, IMcpContextAccessor accessor)
                 : base(
                     "client",
@@ -130,6 +199,10 @@ public class LoginToolTests
             {
             }
 
-            public override string BuildAuthorizationUrl(string sessionId) => "http://auth/authorize?foo=bar";
+            public override string BuildAuthorizationUrl(string sessionId)
+            {
+                LastSessionId = sessionId;
+                return "http://auth/authorize?foo=bar";
+            }
         }
 }
