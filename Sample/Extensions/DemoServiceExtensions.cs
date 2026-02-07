@@ -151,7 +151,6 @@ public static class DemoServiceExtensions
         });
 
         services.AddLoginTool(sp => new LoginTool());
-        services.AddMcpifyTestTool();
 
         services.AddMcpify(options =>
         {
