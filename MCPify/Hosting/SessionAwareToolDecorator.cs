@@ -25,35 +25,35 @@ public class SessionAwareToolDecorator : McpServerTool
     }
 
     public override Tool ProtocolTool => _innerTool.ProtocolTool;
-
-    // Delegate Metadata to the inner tool
     public override IReadOnlyList<object> Metadata => _innerTool.Metadata;
 
     public override async ValueTask<CallToolResult> InvokeAsync(RequestContext<CallToolRequestParams> context, CancellationToken token)
     {
-        // Bypass for 'connect' tool - it establishes the session
         if (_innerTool.ProtocolTool.Name.Equals("connect", StringComparison.OrdinalIgnoreCase))
         {
             return await _innerTool.InvokeAsync(context, token);
         }
 
-        // Ensure the RequestContext has Services (it should, but safety first)
         var services = context.Services ?? _serviceProvider;
         var accessor = services.GetService<IMcpContextAccessor>();
 
-        if (accessor != null)
+        if (accessor == null)
         {
-            // Start with the session produced by the MCP server implementation.
+            return await _innerTool.InvokeAsync(context, token);
+        }
+
+        var previousSessionId = accessor.SessionId;
+        var previousConnectionId = accessor.ConnectionId;
+        var previousAccessToken = accessor.AccessToken;
+
+        try
+        {
             var sessionId = context.Server?.SessionId;
 
-            // For backwards compatibility with older clients that send the sessionId explicitly.
             if (string.IsNullOrEmpty(sessionId) && context.Params?.Arguments != null)
             {
-                // Case-insensitive lookup. FirstOrDefault returns default(KeyValuePair) if not found.
                 var argEntry = context.Params.Arguments.FirstOrDefault(x => x.Key.Equals("sessionId", StringComparison.OrdinalIgnoreCase));
-                
-                // Check if we actually found a key (Key will be non-null)
-                if (argEntry.Key != null)
+                if (!string.IsNullOrEmpty(argEntry.Key))
                 {
                     if (argEntry.Value.ValueKind == JsonValueKind.String)
                     {
@@ -61,13 +61,11 @@ public class SessionAwareToolDecorator : McpServerTool
                     }
                     else
                     {
-                        // Fallback for other types (e.g. number/boolean) if user sent unexpected data
                         sessionId = argEntry.Value.ToString();
                     }
                 }
             }
 
-            // Resolve the actual Principal if we have a Handle (for Lazy Auth support)
             var sessionMap = services.GetService<ISessionMap>();
             if (sessionMap != null && !string.IsNullOrEmpty(sessionId))
             {
@@ -76,15 +74,17 @@ public class SessionAwareToolDecorator : McpServerTool
 
             accessor.SessionId = sessionId;
 
-            // Extract access token from HTTP Authorization header (enables TokenSource.Client for HTTP transport)
             var httpContextAccessor = services.GetService<IHttpContextAccessor>();
             var authHeader = httpContextAccessor?.HttpContext?.Request?.Headers["Authorization"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(authHeader))
-            {
-                accessor.AccessToken = authHeader;
-            }
-        }
+            accessor.AccessToken = string.IsNullOrEmpty(authHeader) ? null : authHeader;
 
-        return await _innerTool.InvokeAsync(context, token);
+            return await _innerTool.InvokeAsync(context, token);
+        }
+        finally
+        {
+            accessor.SessionId = previousSessionId;
+            accessor.ConnectionId = previousConnectionId;
+            accessor.AccessToken = previousAccessToken;
+        }
     }
 }

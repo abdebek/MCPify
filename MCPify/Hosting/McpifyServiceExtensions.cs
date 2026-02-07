@@ -97,8 +97,9 @@ public static class McpifyServiceExtensions
 
         services.AddSingleton<IEndpointMetadataProvider, AspNetCoreEndpointMetadataProvider>();
 
-        // Register IMcpContextAccessor and its concrete implementation
-        services.AddScoped<IMcpContextAccessor, McpContextAccessor>();
+        // Register IMcpContextAccessor as singleton - AsyncLocal handles per-request isolation
+        // (same pattern as ASP.NET Core's IHttpContextAccessor)
+        services.AddSingleton<IMcpContextAccessor, McpContextAccessor>();
 
         // Register OAuth discovery services (core - needed by McpifyServiceRegistrar for OpenAPI parsing)
         services.AddSingleton<OpenApiOAuthParser>();

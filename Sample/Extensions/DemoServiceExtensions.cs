@@ -1,22 +1,27 @@
 using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.OAuth;
+using MCPify.Core.Session;
 using MCPify.Hosting;
 using MCPify.Sample.Auth;
 using MCPify.Sample.Data;
 using MCPify.Tools;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
+using ModelContextProtocol.AspNetCore.Authentication;
 using OpenIddict.Validation.AspNetCore;
 
 namespace MCPify.Sample.Extensions;
 
 public static class DemoServiceExtensions
 {
-    public static IServiceCollection AddDemoDatabaseAndAuth(this IServiceCollection services)
+    public static IServiceCollection AddDemoDatabaseAndAuth(this IServiceCollection services, string baseUrl)
     {
+        var normalizedBaseUrl = baseUrl.TrimEnd('/');
+
         services.AddDbContext<ApplicationDbContext>(options =>
         {
             options.UseInMemoryDatabase("db");
@@ -32,15 +37,19 @@ public static class DemoServiceExtensions
             .AddServer(options =>
             {
                 options.SetAuthorizationEndpointUris("connect/authorize")
-                       .SetTokenEndpointUris("connect/token");
+                       .SetTokenEndpointUris("connect/token")
+                       .SetConfigurationEndpointUris("connect/internal-openid-configuration");
 
                 options.AllowAuthorizationCodeFlow()
                        .AllowClientCredentialsFlow()
                        .AllowRefreshTokenFlow();
+                options.AcceptAnonymousClients();
+                options.RequireProofKeyForCodeExchange();
+                options.DisableAccessTokenEncryption();
+                options.RegisterResources(normalizedBaseUrl, normalizedBaseUrl + "/");
 
                 options.RegisterScopes("read_secrets", "api");
 
-                // Use development credentials (NOT FOR PRODUCTION)
                 options.AddDevelopmentEncryptionCertificate()
                        .AddDevelopmentSigningCertificate();
 
@@ -62,18 +71,20 @@ public static class DemoServiceExtensions
         });
 
         services.AddAuthorization();
-        
-        services.AddCors(options =>                {
-                    options.AddPolicy("AllowAll", builder =>
-                    {
-                        builder.AllowAnyOrigin()
-                               .AllowAnyMethod()
-                               .AllowAnyHeader();
-                    });
-                });
-                
-                return services;
-            }
+
+        services.AddCors(options =>
+        {
+            options.AddPolicy("AllowAll", builder =>
+            {
+                builder.AllowAnyOrigin()
+                    .AllowAnyMethod()
+                    .AllowAnyHeader();
+            });
+        });
+
+        return services;
+    }
+
     public static IServiceCollection AddDemoSwagger(this IServiceCollection services, string baseUrl)
     {
         services.AddEndpointsApiExplorer();
@@ -117,10 +128,11 @@ public static class DemoServiceExtensions
         var demoOptions = configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
         var allowFallback = transport == McpTransportType.Stdio;
 
-        // Register OAuth Provider
-        services.AddScoped<OAuthAuthorizationCodeAuthentication>(sp => {
+        services.AddSingleton<OAuthAuthorizationCodeAuthentication>(sp =>
+        {
             var secureTokenStore = sp.GetRequiredService<ISecureTokenStore>();
             var mcpContextAccessor = sp.GetRequiredService<IMcpContextAccessor>();
+            var sessionMap = sp.GetService<ISessionMap>();
             return new OAuthAuthorizationCodeAuthentication(
                 clientId: "demo-client-id",
                 authorizationEndpoint: $"{baseUrl}/connect/authorize",
@@ -132,7 +144,8 @@ public static class DemoServiceExtensions
                 usePkce: true,
                 redirectUri: oauthRedirectUri,
                 stateSecret: demoOptions.StateSecret,
-                allowDefaultSessionFallback: allowFallback);
+                allowDefaultSessionFallback: allowFallback,
+                sessionMap: sessionMap);
         });
 
         services.AddLoginTool(sp => new LoginTool());
@@ -142,6 +155,17 @@ public static class DemoServiceExtensions
         {
             options.Transport = transport;
             options.ResourceUrlOverride = baseUrl;
+            options.OAuthConfigurations.Add(new OAuth2Configuration
+            {
+                AuthorizationUrl = $"{baseUrl}/connect/authorize",
+                TokenUrl = $"{baseUrl}/connect/token",
+                FlowType = "authorization_code",
+                AuthorizationServers = new List<string> { baseUrl },
+                Scopes = new Dictionary<string, string>
+                {
+                    ["read_secrets"] = "Read protected secrets"
+                }
+            });
 
             // Expose the local API (which is now the "Real" API)
             options.LocalEndpoints = new()
@@ -152,7 +176,9 @@ public static class DemoServiceExtensions
                 Filter = descriptor =>
                     !descriptor.Route.StartsWith("/connect") && // Hide auth endpoints
                     !descriptor.Route.StartsWith("/auth"),      // Hide callback
-                UpstreamAuth = UpstreamAuth.ServerManaged(sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>())
+                UpstreamAuth = UpstreamAuth.Fallback(
+                    UpstreamAuth.PassThrough(),
+                    UpstreamAuth.ServerManaged(sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()))
             };
 
             // External APIs (Petstore) - Public API, no authentication
@@ -171,6 +197,13 @@ public static class DemoServiceExtensions
                 OpenApiFilePath = "sample-api.json",
                 ToolPrefix = "localfile_"
             });
+        });
+
+        // Accept access tokens using OpenIddict validation, but keep MCP OAuth challenge metadata.
+        services.PostConfigure<AuthenticationOptions>(options =>
+        {
+            options.DefaultAuthenticateScheme = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = McpAuthenticationDefaults.AuthenticationScheme;
         });
 
         return services;

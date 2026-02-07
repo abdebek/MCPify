@@ -88,8 +88,13 @@ public static class McpifyEndpointExtensions
                                 DefaultHeaders = options.LocalEndpoints.DefaultHeaders
                             };
 
+                            var hasSecurity = descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0;
+
                             #pragma warning disable CS0618 // Obsolete TokenSource/AuthenticationFactory - backward compat
-                            var tokenProvider = TokenProviderFactory.Create(services, options.LocalEndpoints.UpstreamAuth, options.LocalEndpoints.TokenSource, options.LocalEndpoints.AuthenticationFactory);
+                            var effectiveUpstreamAuth = hasSecurity ? options.LocalEndpoints.UpstreamAuth : null;
+                            var effectiveAuthFactory = hasSecurity ? options.LocalEndpoints.AuthenticationFactory : null;
+
+                            var tokenProvider = TokenProviderFactory.Create(services, effectiveUpstreamAuth, options.LocalEndpoints.TokenSource, effectiveAuthFactory);
                             #pragma warning restore CS0618
                             var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, tokenProvider);
                             toolCollection.Add(tool);

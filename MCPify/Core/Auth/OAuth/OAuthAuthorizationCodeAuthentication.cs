@@ -106,12 +106,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
     public virtual async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        if (!string.IsNullOrEmpty(_mcpContextAccessor.AccessToken))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _mcpContextAccessor.AccessToken);
-            return;
-        }
-
         var sessionId = _mcpContextAccessor.SessionId;
 
         if (string.IsNullOrEmpty(sessionId))
@@ -136,9 +130,8 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 return;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.Error.WriteLine($"Token refresh failed for session {sessionId}: {ex.Message}");
                 await _secureTokenStore.DeleteTokenAsync(sessionId, _oauthProviderName, cancellationToken);
             }
         }

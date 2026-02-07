@@ -100,10 +100,11 @@ public class OAuthE2ETests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ApplyAsync_UsesPassThroughToken_WhenPresentInContext()
+    public async Task ApplyAsync_IgnoresContextAccessToken_AndUsesStoredServerToken()
     {
         var tokenStore = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor { AccessToken = "pass-through-token" };
+        await tokenStore.SaveTokenAsync("test-session", "OAuth", new TokenData("server-token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -121,7 +122,7 @@ public class OAuthE2ETests : IAsyncLifetime
         await auth.ApplyAsync(request);
 
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
-        Assert.Equal("pass-through-token", request.Headers.Authorization?.Parameter);
+        Assert.Equal("server-token", request.Headers.Authorization?.Parameter);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using MCPify.Core;
 using MCPify.Hosting;
 using MCPify.Sample;
+using MCPify.Sample.Auth;
 using MCPify.Sample.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -34,7 +35,7 @@ var oauthRedirectUri = $"{baseUrl}{oauthRedirectPath}";
 builder.WebHost.UseUrls(baseUrl);
 
 // --- Services ---
-builder.Services.AddDemoDatabaseAndAuth();
+builder.Services.AddDemoDatabaseAndAuth(baseUrl);
 builder.Services.AddDemoSwagger(baseUrl);
 builder.Services.AddDemoMcpify(builder.Configuration, baseUrl, oauthRedirectUri);
 
@@ -48,6 +49,9 @@ app.UseCors("AllowAll");
 
 app.UseSwagger();
 app.UseSwaggerUI();
+
+// Expose OIDC discovery + dynamic client registration before auth middleware.
+app.UseDynamicClientRegistration();
 
 app.UseAuthentication();
 app.UseAuthorization();

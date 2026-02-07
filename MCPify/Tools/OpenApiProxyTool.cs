@@ -10,7 +10,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace MCPify.Tools;
 
@@ -64,16 +63,18 @@ public class OpenApiProxyTool : McpServerTool
         RequestContext<CallToolRequestParams> context,
         CancellationToken token)
     {
-        var logger = context.Services != null ? context.Services.GetService<Microsoft.Extensions.Logging.ILogger<OpenApiProxyTool>>() : null;
-        
         try
         {
-            var argsDict = context.Params?.Arguments != null
-                ? JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(context.Params.Arguments))
-                : new Dictionary<string, JsonElement>();
+            var argsDict = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+            if (context.Params?.Arguments != null)
+            {
+                foreach (var entry in context.Params.Arguments)
+                {
+                    argsDict[entry.Key] = entry.Value.Clone();
+                }
+            }
 
             var request = BuildHttpRequest(argsDict);
-            logger?.LogInformation("Invoking {Method} {Url}", request.Method, request.RequestUri);
 
             var authToken = await _tokenProvider.GetTokenAsync(token);
             if (!string.IsNullOrEmpty(authToken))
@@ -94,8 +95,6 @@ public class OpenApiProxyTool : McpServerTool
 
             if (!response.IsSuccessStatusCode)
             {
-                logger?.LogWarning("API call failed: {StatusCode} {Reason}. Response: {Content}", response.StatusCode, response.ReasonPhrase, content);
-
                 var errorContent = JsonSerializer.Serialize(new
                 {
                     error = true,
@@ -111,15 +110,21 @@ public class OpenApiProxyTool : McpServerTool
                 };
             }
 
-            logger?.LogInformation("API call successful: {StatusCode}", response.StatusCode);
             return new CallToolResult
             {
                 Content = new[] { new TextContentBlock { Text = content } }
             };
         }
+        catch (ArgumentException ex)
+        {
+            return new CallToolResult
+            {
+                Content = new[] { new TextContentBlock { Text = ex.Message } },
+                IsError = true
+            };
+        }
         catch (Exception ex)
         {
-            logger?.LogError(ex, "Error invoking OpenApiProxyTool for {ToolName}", ProtocolTool.Name);
             return new CallToolResult
             {
                 Content = new[] { new TextContentBlock { Text = $"Internal Error: {ex.Message}" } },
@@ -178,13 +183,20 @@ public class OpenApiProxyTool : McpServerTool
         var queryParams = new List<string>();
         object? bodyContent = null;
         var headers = new Dictionary<string, string>();
+        var missingPathParams = new List<string>();
 
         if (argsDict != null)
         {
             foreach (var param in _descriptor.Operation.Parameters ?? Enumerable.Empty<OpenApiParameter>())
             {
                 if (!argsDict.TryGetValue(param.Name, out var value))
+                {
+                    if (param.In == ParameterLocation.Path && param.Required)
+                    {
+                        missingPathParams.Add(param.Name);
+                    }
                     continue;
+                }
 
                 var stringValue = value.ValueKind == JsonValueKind.String
                     ? value.GetString()
@@ -193,6 +205,14 @@ public class OpenApiProxyTool : McpServerTool
                 switch (param.In)
                 {
                     case ParameterLocation.Path:
+                        if (string.IsNullOrWhiteSpace(stringValue))
+                        {
+                            if (param.Required)
+                            {
+                                missingPathParams.Add(param.Name);
+                            }
+                            break;
+                        }
                         route = ReplaceRouteParameter(route, param.Name, Uri.EscapeDataString(stringValue ?? ""));
                         break;
 
@@ -213,6 +233,20 @@ public class OpenApiProxyTool : McpServerTool
             {
                 bodyContent = bodyElement;
             }
+        }
+
+        if (missingPathParams.Count > 0)
+        {
+            throw new ArgumentException($"Missing required path parameter(s): {string.Join(", ", missingPathParams.Distinct(StringComparer.OrdinalIgnoreCase))}");
+        }
+
+        var unresolvedMatches = Regex.Matches(route, @"\{([^}:]+)(:[^}]+)?\}");
+        if (unresolvedMatches.Count > 0)
+        {
+            var unresolved = unresolvedMatches
+                .Select(m => m.Groups[1].Value)
+                .Distinct(StringComparer.OrdinalIgnoreCase);
+            throw new ArgumentException($"Missing or invalid path parameter(s): {string.Join(", ", unresolved)}");
         }
 
         var baseUrl = _apiBaseUrlProvider().TrimEnd('/');
