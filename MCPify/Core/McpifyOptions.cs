@@ -58,6 +58,12 @@ public class McpifyOptions
     public McpTransportType Transport { get; set; } = McpTransportType.Http;
 
     /// <summary>
+    /// Allows forwarding MCP client bearer tokens to upstream APIs when HTTP transport is used.
+    /// Disabled by default for hosted/multi-user safety.
+    /// </summary>
+    public bool AllowClientTokenPassthrough { get; set; }
+
+    /// <summary>
     /// Controls how the login tool handles browser launching for OAuth authentication.
     /// Set to <see cref="BrowserLaunchBehavior.Never"/> for headless/remote environments to avoid
     /// unnecessary timeouts waiting for browser launch to fail.
@@ -69,6 +75,10 @@ public class McpifyOptions
     /// Optional list of OAuth2 configurations to be added to the OAuthConfigurationStore.
     /// </summary>
     public List<OAuth2Configuration> OAuthConfigurations { get; set; } = new();
+
+    internal bool HttpPassThroughConfigured { get; set; }
+
+    internal bool HttpPassThroughWarningLogged { get; set; }
 
 }
 
@@ -181,7 +191,7 @@ public class LocalEndpointsOptions
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
-    /// Defaults to Both (hybrid) - tries client token first, then server authentication.
+    /// Legacy compatibility path used when <see cref="UpstreamAuth"/> is not configured.
     /// </summary>
     [Obsolete("Use UpstreamAuth instead.")]
     public TokenSource TokenSource { get; set; } = TokenSource.Both;
@@ -236,7 +246,7 @@ public class ExternalApiOptions
 
     /// <summary>
     /// Specifies where authentication tokens should be sourced from.
-    /// Defaults to Both (hybrid) - tries client token first, then server authentication.
+    /// Legacy compatibility path used when <see cref="UpstreamAuth"/> is not configured.
     /// </summary>
     [Obsolete("Use UpstreamAuth instead.")]
     public TokenSource TokenSource { get; set; } = TokenSource.Both;

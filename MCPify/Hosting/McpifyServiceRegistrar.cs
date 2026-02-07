@@ -48,6 +48,8 @@ public class McpifyServiceRegistrar
 
     public async Task RegisterToolsAsync(IEnumerable<EndpointDataSource>? endpointDataSources = null)
     {
+        UpstreamAuthTransportPolicy.WarnIfNeeded(_options, _logger);
+
         // 1. Register manual tools from DI
         var toolCollection = _serviceProvider.GetService<McpServerPrimitiveCollection<McpServerTool>>();
         if (toolCollection != null)

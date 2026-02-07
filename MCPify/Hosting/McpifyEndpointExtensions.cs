@@ -28,6 +28,8 @@ public static class McpifyEndpointExtensions
             return app;
         }
 
+        UpstreamAuthTransportPolicy.WarnIfNeeded(options, logger);
+
         if (options.LocalEndpoints?.Enabled == true)
         {
             try

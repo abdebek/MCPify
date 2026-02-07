@@ -51,6 +51,7 @@ public static class McpifyServiceExtensions
     {
         var opts = new McpifyOptions();
         configure(opts);
+        UpstreamAuthTransportPolicy.NormalizeAndValidate(opts);
 
         services.AddSingleton(opts);
 

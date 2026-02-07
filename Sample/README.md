@@ -51,12 +51,21 @@ Example call payload for user lookup:
 
 For protected tools like `api_get_api_secrets`:
 
-1. If your MCP client is already connected with OAuth, that bearer token is reused automatically.
-2. Otherwise, client receives auth challenge or uses the login tool.
+1. On HTTP transport, MCPify uses server-managed upstream auth by default.
+2. If auth is missing, use the login tool or follow the challenge flow.
 3. Open the provided authorization URL in browser.
 4. Complete consent.
 5. MCPify callback stores token server-side.
 6. Retry the protected tool call.
+
+## Pass-Through Opt-In (HTTP)
+
+Client token pass-through on HTTP is disabled by default.
+On Stdio transport, pass-through is allowed by default for local workflows.
+
+- Enable only when you explicitly want it:
+  - `Mcpify:AllowClientTokenPassthrough = true`
+- This mode is intended for local/dev scenarios and is unsafe for hosted multi-user deployments.
 
 ## Dynamic Client Registration
 

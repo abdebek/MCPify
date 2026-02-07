@@ -8,6 +8,7 @@ namespace MCPify.Core.Auth.UpstreamAuthStrategies;
 internal sealed class FallbackUpstreamAuth : UpstreamAuth
 {
     private readonly UpstreamAuth[] _strategies;
+    internal IReadOnlyList<UpstreamAuth> Strategies => _strategies;
 
     internal FallbackUpstreamAuth(UpstreamAuth[] strategies)
     {

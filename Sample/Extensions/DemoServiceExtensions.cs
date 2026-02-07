@@ -125,8 +125,10 @@ public static class DemoServiceExtensions
     public static IServiceCollection AddDemoMcpify(this IServiceCollection services, IConfiguration configuration, string baseUrl, string oauthRedirectUri)
     {
         var transport = configuration.GetValue<McpTransportType>("Mcpify:Transport", McpTransportType.Stdio);
+        var allowClientTokenPassthrough = configuration.GetValue<bool>("Mcpify:AllowClientTokenPassthrough");
         var demoOptions = configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
         var allowFallback = transport == McpTransportType.Stdio;
+        var serverManagedAuth = UpstreamAuth.ServerManaged(sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>());
 
         services.AddSingleton<OAuthAuthorizationCodeAuthentication>(sp =>
         {
@@ -155,6 +157,7 @@ public static class DemoServiceExtensions
         {
             options.Transport = transport;
             options.ResourceUrlOverride = baseUrl;
+            options.AllowClientTokenPassthrough = allowClientTokenPassthrough;
             options.OAuthConfigurations.Add(new OAuth2Configuration
             {
                 AuthorizationUrl = $"{baseUrl}/connect/authorize",
@@ -167,21 +170,21 @@ public static class DemoServiceExtensions
                 }
             });
 
-            // Expose the local API (which is now the "Real" API)
             options.LocalEndpoints = new()
             {
                 Enabled = true,
                 ToolPrefix = "api_",
                 BaseUrlOverride = baseUrl,
                 Filter = descriptor =>
-                    !descriptor.Route.StartsWith("/connect") && // Hide auth endpoints
-                    !descriptor.Route.StartsWith("/auth"),      // Hide callback
-                UpstreamAuth = UpstreamAuth.Fallback(
-                    UpstreamAuth.PassThrough(),
-                    UpstreamAuth.ServerManaged(sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()))
+                    !descriptor.Route.StartsWith("/connect") &&
+                    !descriptor.Route.StartsWith("/auth"),
+                UpstreamAuth = transport == McpTransportType.Stdio
+                    ? UpstreamAuth.PassThrough()
+                    : allowClientTokenPassthrough
+                        ? UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), serverManagedAuth)
+                        : serverManagedAuth
             };
 
-            // External APIs (Petstore) - Public API, no authentication
             options.ExternalApis.Add(new ExternalApiOptions
             {
                 ApiBaseUrl = "https://petstore.swagger.io/v2",
@@ -190,16 +193,14 @@ public static class DemoServiceExtensions
                 UpstreamAuth = UpstreamAuth.None()
             });
 
-            // External APIs (Local File Demo)
             options.ExternalApis.Add(new ExternalApiOptions
             {
-                ApiBaseUrl = baseUrl, // Point back to self for demo
+                ApiBaseUrl = baseUrl,
                 OpenApiFilePath = "sample-api.json",
                 ToolPrefix = "localfile_"
             });
         });
 
-        // Accept access tokens using OpenIddict validation, but keep MCP OAuth challenge metadata.
         services.PostConfigure<AuthenticationOptions>(options =>
         {
             options.DefaultAuthenticateScheme = OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme;
