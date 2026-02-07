@@ -13,14 +13,14 @@
 -   **UpstreamAuth Abstraction**: Replaces the rigid `TokenSource` enum with an extensible class offering static factory methods: `PassThrough()`, `None()`, `ServerManaged()`, `TokenExchange()`, `Fallback()`, and `Custom()`
 -   **RFC 8693 Token Exchange**: New `UpstreamAuth.TokenExchange()` strategy exchanges the MCP client's access token for an upstream API token at a configured token endpoint
 -   **Composable Strategies**: `UpstreamAuth.Fallback()` chains multiple strategies; `UpstreamAuth.Custom()` provides an escape hatch for user-supplied `ITokenProvider` factories
--   **Migration Path**: When `UpstreamAuth` is set on an options object it takes precedence; when `null` (default) the legacy `TokenSource` path runs
+-   **Migration Path**: `TokenSource`/`AuthenticationFactory` remain available only as obsolete compatibility APIs; new configuration should use `UpstreamAuth`
 -   **Modular Service Registration**: Split `AddMcpify()` into `AddMcpifyCore()` + `AddMcpifyAuthentication()` for granular control
--   **Lightweight Core Mode**: Use `AddMcpifyCore()` alone when using `TokenSource.Client` or `TokenSource.None` to avoid unnecessary auth overhead
--   **Fixed TokenSource.Client**: HTTP Authorization header is now extracted and forwarded to upstream APIs
+-   **Lightweight Core Mode**: Use `AddMcpifyCore()` alone when using `UpstreamAuth.PassThrough()` or `UpstreamAuth.None()` to avoid unnecessary auth overhead
+-   **Fixed Pass-Through Token Forwarding**: HTTP Authorization header extraction supports client token pass-through scenarios
 -   **OAuth Discovery in Core**: `OpenApiOAuthParser` and `OAuthConfigurationStore` moved to core for metadata discovery without full auth stack
 -   **Removed BuildServiceProvider Anti-Pattern**: `AddMcpifyAuthentication()` no longer builds an intermediate service provider
--   **Deployment Risk Documentation**: Clear guidance on `TokenSource` security implications per deployment model
--   **Backward Compatible**: Existing `AddMcpify()` calls and `TokenSource`/`AuthenticationFactory` properties continue to work unchanged (`[Obsolete]` but functional)
+-   **Deployment Risk Documentation**: Clear guidance on HTTP pass-through safety and opt-in requirements
+-   **Backward Compatible**: Existing `TokenSource`/`AuthenticationFactory` properties remain `[Obsolete]` for migration guidance
 
 ### v0.0.13-preview (Jan 27, 2026)
 -   **Flexible Token Provider Architecture**: New `ITokenProvider` abstraction separates token acquisition from token attachment
@@ -93,8 +93,8 @@ builder.Services.AddMcpify(options =>
         ToolPrefix = "myapp_",
         BaseUrlOverride = "https://localhost:5001",  // Optional: override base URL
         Filter = op => op.Route.StartsWith("/api"),  // Optional: filter endpoints
-        TokenSource = TokenSource.Both,  // Optional: defaults to Both (hybrid)
-        AuthenticationFactory = sp => sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()  // Optional
+        UpstreamAuth = UpstreamAuth.ServerManaged(sp =>
+            sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>())
     };
 
     // Option B: Expose External APIs from URL
@@ -170,7 +170,7 @@ builder.Services.AddMcpifyCore(options =>
     {
         ApiBaseUrl = "https://api.github.com",
         OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
-        TokenSource = TokenSource.Client
+        UpstreamAuth = UpstreamAuth.PassThrough()
     });
 
     // Or for public APIs with no auth
@@ -178,7 +178,7 @@ builder.Services.AddMcpifyCore(options =>
     {
         ApiBaseUrl = "https://api.publicapis.org",
         OpenApiUrl = "https://api.publicapis.org/swagger.json",
-        TokenSource = TokenSource.None
+        UpstreamAuth = UpstreamAuth.None()
     });
 });
 ```
@@ -189,7 +189,7 @@ This registers only essential services:
 - MCP Server transport (Stdio/Http)
 - `HttpClient`, `IOpenApiProvider`, `IJsonSchemaGenerator`, `IEndpointMetadataProvider`
 
-### Full Stack (Backward Compatible)
+### Full Stack (Recommended)
 
 Use `AddMcpify()` for the complete feature set including server-side OAuth:
 
@@ -203,8 +203,8 @@ builder.Services.AddMcpify(options =>
     {
         ApiBaseUrl = "https://api.example.com",
         OpenApiUrl = "https://api.example.com/swagger.json",
-        TokenSource = TokenSource.Server,  // or TokenSource.Both
-        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+        UpstreamAuth = UpstreamAuth.ServerManaged(sp =>
+            sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>())
     });
 });
 ```
@@ -229,8 +229,10 @@ builder.Services.AddMcpifyCore(options =>
     {
         ApiBaseUrl = "https://api.example.com",
         OpenApiUrl = "https://api.example.com/swagger.json",
-        TokenSource = TokenSource.Both,  // Try client first, fallback to server
-        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
+        UpstreamAuth = UpstreamAuth.Fallback(
+            UpstreamAuth.PassThrough(),
+            UpstreamAuth.ServerManaged(sp =>
+                sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>()))
     });
 });
 
@@ -368,132 +370,16 @@ options.ExternalApis.Add(new ExternalApiOptions
 | `TokenSource = TokenSource.Server` + `AuthenticationFactory = ...` | `UpstreamAuth = UpstreamAuth.ServerManaged(...)` |
 | `TokenSource = TokenSource.Both` + `AuthenticationFactory = ...` | `UpstreamAuth = UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), UpstreamAuth.ServerManaged(...))` |
 
-> **Note:** `TokenSource` and `AuthenticationFactory` are `[Obsolete]` but continue to work. When `UpstreamAuth` is set, it takes precedence.
-
-### Token Source Configuration (Legacy)
-
-MCPify supports flexible token sourcing through the `TokenSource` configuration option. This allows you to control where authentication tokens come from:
-
-#### Hybrid Approach (Default - Recommended)
-
-Try client token first, fallback to server authentication - provides maximum flexibility:
-
-```csharp
-builder.Services.AddMcpify(options =>
-{
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.example.com",
-        OpenApiUrl = "https://api.example.com/swagger.json",
-        TokenSource = TokenSource.Both,  // Default - best of both worlds
-        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
-    });
-});
-```
-
-This is the recommended default because:
-- If the MCP client provides a token → uses it automatically
-- If no client token → falls back to server authentication
-- Backward compatible with existing configurations
-
-#### Server-Managed Authentication
-
-MCPify exclusively handles OAuth flows, token storage, and refresh:
-
-```csharp
-builder.Services.AddMcpify(options =>
-{
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.example.com",
-        OpenApiUrl = "https://api.example.com/swagger.json",
-        TokenSource = TokenSource.Server,  // Default - MCPify manages auth
-        AuthenticationFactory = sp => new OAuthAuthorizationCodeAuthentication(...)
-    });
-});
-```
-
-#### Client-Managed Authentication
-
-Your MCP client (e.g., Claude Desktop) handles authentication and provides tokens:
-
-```csharp
-builder.Services.AddMcpify(options =>
-{
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.github.com",
-        OpenApiUrl = "https://raw.githubusercontent.com/.../api.github.com.json",
-        TokenSource = TokenSource.Client  // Client provides tokens
-    });
-});
-```
-
-This is useful when:
-- Your MCP client handles OAuth flows
-- You want to avoid duplicate authentication logic
-- Tokens are managed outside MCPify
-
-#### Hybrid Approach
-
-Try client token first, fallback to server authentication:
-
-```csharp
-builder.Services.AddMcpify(options =>
-{
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.example.com",
-        OpenApiUrl = "https://api.example.com/swagger.json",
-        TokenSource = TokenSource.Both,  // Try client first, fallback to server
-        AuthenticationFactory = sp => new BearerAuthentication("fallback-token")
-    });
-});
-```
-
-#### No Authentication
-
-For public APIs that don't require authentication:
-
-```csharp
-builder.Services.AddMcpify(options =>
-{
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.publicapis.org",
-        OpenApiUrl = "https://api.publicapis.org/swagger.json",
-        TokenSource = TokenSource.None  // No auth required
-    });
-});
-```
-
-**Available TokenSource Values:**
-
-| Value | Description |
-|-------|-------------|
-| `Both` (default) | Try client token first, fallback to server authentication - provides maximum flexibility |
-| `Server` | MCPify manages authentication (OAuth flows, API keys, etc.) - explicit server-only auth |
-| `Client` | MCP client provides tokens directly via the protocol - explicit client-only auth |
-| `None` | No authentication required |
+> **Note:** `TokenSource` and `AuthenticationFactory` are `[Obsolete]` and kept only for migration. Use `UpstreamAuth` for all new configuration.
 
 ### Deployment-Specific Auth Considerations
 
-The security implications of `TokenSource` depend on your deployment model:
-
-| Deployment | Transport | `TokenSource.Client` | `TokenSource.Server` | `TokenSource.Both` |
-|------------|-----------|---------------------|---------------------|-------------------|
+| Deployment | Transport | `UpstreamAuth.PassThrough()` | `UpstreamAuth.ServerManaged(...)` | `UpstreamAuth.Fallback(PassThrough, ServerManaged)` |
+|------------|-----------|-------------------------------|------------------------------------|-----------------------------------------------------|
 | Local / single-user | Stdio | Safe | Safe | Safe |
-| Local / single-user | Http | Safe | Safe | Safe |
-| Hosted / multi-user | Http | Use with caution | Recommended | Use with caution |
+| Hosted / multi-user | Http | Explicit opt-in only | Recommended default | Explicit opt-in only |
 
-**Local / Stdio deployments:** All `TokenSource` options are equally safe. The MCP client and server share the same trust boundary (same machine, same user). `TokenSource.Client` is a good choice here to avoid server-side auth overhead.
-
-**Hosted / multi-user deployments:** `TokenSource.Server` is the recommended default. When MCP auth is enabled alongside `TokenSource.Client`, the client's MCP access token is forwarded as-is to the upstream API. This conflates two separate authentication planes (MCP client-to-server vs MCPify-to-upstream-API) and introduces risks:
--   Tokens may be logged, cached, or replayed by untrusted clients
--   The MCP access token may not have the correct audience/scopes for the upstream API
--   You lose control over token lifecycle and refresh
-
-If you need `TokenSource.Client` in a hosted setup, ensure your upstream API validates tokens independently and that your MCP clients are trusted.
+For HTTP transport, pass-through (or fallback with pass-through first) requires `AllowClientTokenPassthrough = true`. Without that flag, MCPify fails fast at startup.
 
 ### Enabling OAuth
 
