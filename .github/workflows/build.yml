@@ -2,9 +2,9 @@ name: Build and Test
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, dev ]
 
 jobs:
   build:
@@ -17,17 +17,22 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        # Multi-target: net8.0;net9.0;net10.0
+        dotnet-version: |
+          8.0.x
+          9.0.x
+          10.0.x
 
     - name: Restore dependencies
-      run: dotnet restore MCPify/MCPify.csproj
+      run: dotnet restore MCPify.slnx
 
     - name: Build
-      run: dotnet build MCPify/MCPify.csproj --configuration Release --no-restore
+      run: dotnet build MCPify.slnx --configuration Release --no-restore
 
     - name: Test
-      run: dotnet test --configuration Release --no-build --verbosity normal
-      continue-on-error: true
+      run: |
+        dotnet test MCPify.slnx --configuration Release --no-build --verbosity normal \
+          --filter "Category!=Playwright"
 
     - name: Pack
       run: dotnet pack MCPify/MCPify.csproj --configuration Release --no-build --output ./artifacts
@@ -36,4 +41,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: nuget-package
-        path: ./artifacts/*.nupkg
+        path: |
+          ./artifacts/*.nupkg
+          ./artifacts/*.snupkg

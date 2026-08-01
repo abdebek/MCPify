@@ -1,5 +1,10 @@
 name: Publish to NuGet
 
+# Trusted Publishing (nuget.org):
+# - Policy workflow file name must be: publish-nuget.yml
+# - Repository: abdebek/MCPify
+# - Environment: leave empty (this job does not set environment:)
+# - Create repo secret NUGET_USER = nuget.org profile username (not email, not API key)
 on:
   push:
     tags:
@@ -7,15 +12,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish (e.g., 1.0.0)'
+        description: 'Version to publish (e.g. 0.0.15-preview)'
         required: true
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # No `environment:` — matches empty Environment on nuget.org Trusted Publishing policy
     permissions:
       contents: write
-      id-token: write
+      id-token: write   # required for GitHub OIDC → NuGet short-lived API key
 
     steps:
     - name: Checkout code
@@ -24,13 +30,11 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
-
-    - name: Restore dependencies
-      run: dotnet restore MCPify/MCPify.csproj
-
-    - name: Build
-      run: dotnet build MCPify/MCPify.csproj --configuration Release --no-restore
+        # Multi-target: net8.0;net9.0;net10.0
+        dotnet-version: |
+          8.0.x
+          9.0.x
+          10.0.x
 
     - name: Set version from tag
       if: startsWith(github.ref, 'refs/tags/v')
@@ -43,11 +47,50 @@ jobs:
       run: |
         echo "PACKAGE_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
+    - name: Restore dependencies
+      run: dotnet restore MCPify.slnx
+
+    - name: Build
+      run: dotnet build MCPify.slnx --configuration Release --no-restore -p:Version=${{ env.PACKAGE_VERSION }}
+
+    - name: Test
+      run: |
+        dotnet test MCPify.slnx --configuration Release --no-build --verbosity minimal \
+          --filter "Category!=Playwright"
+
     - name: Pack
-      run: dotnet pack MCPify/MCPify.csproj --configuration Release --no-build --output ./artifacts /p:PackageVersion=${{ env.PACKAGE_VERSION }}
+      run: |
+        dotnet pack MCPify/MCPify.csproj \
+          --configuration Release \
+          --no-build \
+          --output ./artifacts \
+          -p:PackageVersion=${{ env.PACKAGE_VERSION }} \
+          -p:Version=${{ env.PACKAGE_VERSION }}
+
+    - name: NuGet login (OIDC → temporary API key)
+      uses: NuGet/login@v1
+      id: login
+      with:
+        # nuget.org profile username (Trusted Publishing), NOT email and NOT a long-lived API key
+        user: ${{ secrets.NUGET_USER }}
 
     - name: Publish to NuGet (Trusted Publishing)
-      run: dotnet nuget push ./artifacts/*.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: |
+        # Include .nupkg and .snupkg (symbols)
+        shopt -s nullglob
+        packages=(./artifacts/*.*nupkg)
+        if [ ${#packages[@]} -eq 0 ]; then
+          echo "No packages found in ./artifacts"
+          ls -la ./artifacts || true
+          exit 1
+        fi
+        for pkg in "${packages[@]}"; do
+          echo "Pushing $pkg"
+          dotnet nuget push "$pkg" \
+            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+        done
 
     - name: Delete existing release if it exists
       if: startsWith(github.ref, 'refs/tags/v')
@@ -60,9 +103,11 @@ jobs:
 
     - name: Create GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        files: ./artifacts/*.nupkg
+        files: |
+          ./artifacts/*.nupkg
+          ./artifacts/*.snupkg
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
