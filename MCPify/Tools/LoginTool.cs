@@ -67,6 +67,7 @@ public class LoginTool : McpServerTool
         var tokenStore = context.Services!.GetRequiredService<ISecureTokenStore>();
         var sessionMap = context.Services!.GetService<ISessionMap>();
         var options = context.Services!.GetService<McpifyOptions>() ?? new McpifyOptions();
+        var providerName = auth.ProviderName;
 
         if (sessionMap != null)
         {
@@ -103,13 +104,13 @@ public class LoginTool : McpServerTool
         var timeout = DateTime.UtcNow.AddMinutes(2);
         while (DateTime.UtcNow < timeout && !token.IsCancellationRequested)
         {
-            var tokenData = await tokenStore.GetTokenAsync(sessionId, "OAuth", token);
+            var tokenData = await tokenStore.GetTokenAsync(sessionId, providerName, token);
             if (tokenData != null && !string.IsNullOrEmpty(tokenData.AccessToken))
             {
                  if (options.Transport == McpTransportType.Stdio &&
                      !string.Equals(sessionId, Constants.DefaultSessionId, StringComparison.Ordinal))
                  {
-                     await tokenStore.SaveTokenAsync(Constants.DefaultSessionId, "OAuth", tokenData, token);
+                     await tokenStore.SaveTokenAsync(Constants.DefaultSessionId, providerName, tokenData, token);
                  }
 
                  logger?.LogInformation("Login successful for session {SessionId}", sessionId);

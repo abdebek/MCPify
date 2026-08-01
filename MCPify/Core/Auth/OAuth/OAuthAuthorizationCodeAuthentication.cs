@@ -32,6 +32,8 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly bool _allowDefaultSessionFallback;
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private readonly string _providerName;
+
+    public string ProviderName => _providerName;
     private const string _pkceStorePrefix = "pkce_";
 
     public OAuthAuthorizationCodeAuthentication(
