@@ -58,8 +58,6 @@ app.UseAuthorization();
 
 app.MapDemoEndpoints(oauthRedirectPath);
 
-await app.RegisterDemoMcpToolsAsync();
-
 app.MapMcpifyEndpoint("/mcp");
 
 app.Run();

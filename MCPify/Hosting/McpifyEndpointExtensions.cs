@@ -1,15 +1,9 @@
 using MCPify.Core;
 using MCPify.Core.Auth;
-using MCPify.Core.Auth.TokenProviders;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting.Server;
-using Microsoft.AspNetCore.Hosting.Server.Features;
 using ModelContextProtocol.AspNetCore.Authentication;
 using ModelContextProtocol.Server;
-using MCPify.Endpoints;
-using MCPify.Tools;
-using MCPify.Schema;
 using System.Linq;
 
 namespace MCPify.Hosting;
@@ -32,82 +26,24 @@ public static class McpifyEndpointExtensions
 
         UpstreamAuthTransportPolicy.WarnIfNeeded(options, logger);
 
-        if (options.LocalEndpoints?.Enabled == true)
+        // Single registration entry point: run the registrar for both local and external tools.
+        // This replaces the old pattern of calling RegisterToolsAsync separately + having
+        // MapMcpifyEndpoint re-register local endpoints (which lacked SessionAwareToolDecorator).
+        var registrar = services.GetService<McpifyServiceRegistrar>();
+        if (registrar != null)
         {
             try
             {
-                var endpointProvider = services.GetRequiredService<IEndpointMetadataProvider>() as AspNetCoreEndpointMetadataProvider;
-                if (endpointProvider == null)
-                {
-                    logger.LogError("[MCPify] AspNetCoreEndpointMetadataProvider not found for local endpoints.");
-                }
-                else
-                {
-                    var toolCollection = services.GetService<McpServerPrimitiveCollection<McpServerTool>>();
-                    if (toolCollection == null)
-                    {
-                         logger.LogWarning("[MCPify] McpServerPrimitiveCollection not found. Local endpoints cannot be registered.");
-                    }
-                    else
-                    {
-                        var operations = endpointProvider.GetLocalEndpoints().ToList();
-                        logger.LogInformation($"[MCPify] AspNetCoreEndpointMetadataProvider found {operations.Count} raw local operations.");
-
-                        if (options.LocalEndpoints!.Filter != null)
-                        {
-                            operations = operations.Where(options.LocalEndpoints.Filter).ToList();
-                        }
-                        logger.LogInformation($"[MCPify] After local endpoint filter, {operations.Count} operations remaining.");
-
-                        var httpClient = services.GetRequiredService<IHttpClientFactory>().CreateClient();
-
-                        string BaseUrlProvider()
-                        {
-                            var server = services.GetService<IServer>();
-                            var addresses = server?.Features.Get<IServerAddressesFeature>()?.Addresses;
-                            var baseUrl = options.LocalEndpoints?.BaseUrlOverride
-                                ?? addresses?.FirstOrDefault()
-                                ?? Constants.DefaultBaseUrl;
-                            logger.LogDebug($"[MCPify] BaseUrlProvider returning: {baseUrl}");
-                            return baseUrl;
-                        }
-
-                        var count = 0;
-                        foreach (var operation in operations)
-                        {
-                            var toolName = string.IsNullOrEmpty(options.LocalEndpoints.ToolPrefix)
-                                ? operation.Name
-                                : options.LocalEndpoints.ToolPrefix + operation.Name;
-
-                            if (toolCollection.Any(t => t.ProtocolTool.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                logger.LogDebug("[MCPify] Skipping duplicate local tool registration for {ToolName}.", toolName);
-                                continue;
-                            }
-
-                            var descriptor = operation with { Name = toolName };
-
-                            var localOpts = new McpifyOptions
-                            {
-                                DefaultHeaders = options.LocalEndpoints.DefaultHeaders
-                            };
-
-                            var hasSecurity = descriptor.Operation.Security != null && descriptor.Operation.Security.Count > 0;
-
-                            var effectiveUpstreamAuth = hasSecurity ? options.LocalEndpoints.UpstreamAuth : UpstreamAuth.None();
-                            var tokenProvider = TokenProviderFactory.Create(services, effectiveUpstreamAuth);
-                            var tool = new OpenApiProxyTool(descriptor, BaseUrlProvider, httpClient, services.GetRequiredService<IJsonSchemaGenerator>(), localOpts, tokenProvider);
-                            toolCollection.Add(tool);
-                            count++;
-                        }
-                        logger.LogInformation("[MCPify] Successfully registered {Count} local endpoint tools.", count);
-                    }
-                }
+                registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "[MCPify] Error registering local endpoints in MapMcpifyEndpoint.");
+                logger.LogError(ex, "[MCPify] Error registering tools via McpifyServiceRegistrar.");
             }
+        }
+        else
+        {
+            logger.LogWarning("[MCPify] McpifyServiceRegistrar not found. Tools will not be registered.");
         }
 
         // Get OAuth store once for reuse
