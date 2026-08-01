@@ -195,7 +195,7 @@ public class LoginToolTests
                     store,
                     accessor,
                     redirectUri: "http://callback",
-                    stateSecret: "test-secret")
+                    stateSecret: "test-state-secret-key-for-hmac-signing-32+")
             {
             }
 

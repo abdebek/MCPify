@@ -24,7 +24,7 @@ public class ResourceParameterTests
             secureTokenStore: _tokenStore,
             mcpContextAccessor: _contextAccessor,
             redirectUri: "https://app.example.com/callback",
-            stateSecret: "test-state-secret-key-for-hmac",
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+",
             resourceUrl: resourceUrl
         );
 
@@ -48,7 +48,7 @@ public class ResourceParameterTests
             secureTokenStore: _tokenStore,
             mcpContextAccessor: _contextAccessor,
             redirectUri: "https://app.example.com/callback",
-            stateSecret: "test-state-secret-key-for-hmac"
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+"
         );
 
         _contextAccessor.SessionId = "test-session";
@@ -72,7 +72,7 @@ public class ResourceParameterTests
             mcpContextAccessor: _contextAccessor,
             redirectUri: "https://app.example.com/callback",
             usePkce: true,
-            stateSecret: "test-state-secret-key-for-hmac",
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+",
             resourceUrl: "https://api.example.com"
         );
 

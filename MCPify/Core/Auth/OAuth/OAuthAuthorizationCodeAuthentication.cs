@@ -63,9 +63,15 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _openBrowserAction = openBrowserAction;
         _usePkce = usePkce;
         _authorizationUrlEmitter = authorizationUrlEmitter;
-        _stateSecret = stateSecret ?? throw new ArgumentNullException(nameof(stateSecret),
-            "stateSecret is required for OAuth state signing. Pass a cryptographically random key " +
-            "(at least 32 bytes) or set the MCPIFY_STATE_SECRET environment variable.");
+        var resolvedStateSecret = stateSecret ?? Environment.GetEnvironmentVariable("MCPIFY_STATE_SECRET");
+        if (string.IsNullOrWhiteSpace(resolvedStateSecret) || resolvedStateSecret.Length < 32)
+        {
+            throw new ArgumentException(
+                "stateSecret is required for OAuth state signing and must be at least 32 characters. " +
+                "Pass it via the stateSecret parameter or set the MCPIFY_STATE_SECRET environment variable.",
+                nameof(stateSecret));
+        }
+        _stateSecret = resolvedStateSecret;
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
         _resourceUrl = resourceUrl;
     }
@@ -210,11 +216,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         {
             keys.Add(key);
         }
-    }
-
-    private string? ExtractIdToken(TokenData tokenData)
-    {
-        return tokenData.IdToken;
     }
 
     private async Task<TokenData> ExchangeCodeForTokenAsync(string code, string redirectUri, string? codeVerifier, CancellationToken cancellationToken)

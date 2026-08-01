@@ -28,7 +28,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             accessor,
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
-            stateSecret: "test-state-secret-key-for-hmac");
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -54,7 +54,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             accessor,
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
-            stateSecret: "test-state-secret-key-for-hmac");
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -85,7 +85,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
             allowDefaultSessionFallback: true,
-            stateSecret: "test-state-secret-key-for-hmac");
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -116,11 +116,80 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
             allowDefaultSessionFallback: false,
-            stateSecret: "test-state-secret-key-for-hmac");
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => auth.ApplyAsync(request));
         Assert.Contains("Run the login tool", exception.Message);
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenStateSecretIsNull()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new OAuthAuthorizationCodeAuthentication(
+                "client_id",
+                _oauthServer.AuthorizationEndpoint,
+                _oauthServer.TokenEndpoint,
+                "scope",
+                new InMemoryTokenStore(),
+                new MockMcpContextAccessor(),
+                redirectUri: "http://localhost/callback",
+                stateSecret: null));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenStateSecretIsEmpty()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new OAuthAuthorizationCodeAuthentication(
+                "client_id",
+                _oauthServer.AuthorizationEndpoint,
+                _oauthServer.TokenEndpoint,
+                "scope",
+                new InMemoryTokenStore(),
+                new MockMcpContextAccessor(),
+                redirectUri: "http://localhost/callback",
+                stateSecret: ""));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsWhenStateSecretIsTooShort()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            new OAuthAuthorizationCodeAuthentication(
+                "client_id",
+                _oauthServer.AuthorizationEndpoint,
+                _oauthServer.TokenEndpoint,
+                "scope",
+                new InMemoryTokenStore(),
+                new MockMcpContextAccessor(),
+                redirectUri: "http://localhost/callback",
+                stateSecret: "short"));
+    }
+
+    [Fact]
+    public void Constructor_AcceptsStateSecretFromEnvironmentVariable()
+    {
+        var envVar = "MCPIFY_STATE_SECRET";
+        var previous = Environment.GetEnvironmentVariable(envVar);
+        try
+        {
+            Environment.SetEnvironmentVariable(envVar, "env-provided-state-secret-key-32+chars");
+            var auth = new OAuthAuthorizationCodeAuthentication(
+                "client_id",
+                _oauthServer.AuthorizationEndpoint,
+                _oauthServer.TokenEndpoint,
+                "scope",
+                new InMemoryTokenStore(),
+                new MockMcpContextAccessor(),
+                redirectUri: "http://localhost/callback");
+            Assert.NotNull(auth);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(envVar, previous);
+        }
     }
 }

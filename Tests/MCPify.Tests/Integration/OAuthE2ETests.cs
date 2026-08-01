@@ -34,7 +34,7 @@ public class OAuthE2ETests : IAsyncLifetime
             accessor,
             httpClient: _provider.CreateClient(),
             redirectUri: "http://localhost/callback",
-            stateSecret: "test-state-secret-key-for-hmac"
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+"
         );
 
         // 1. Initiate Flow
@@ -117,7 +117,7 @@ public class OAuthE2ETests : IAsyncLifetime
             accessor,
             httpClient: _provider.CreateClient(),
             redirectUri: "http://localhost/callback",
-            stateSecret: "test-state-secret-key-for-hmac"
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+"
         );
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
@@ -198,7 +198,7 @@ public class OAuthE2ETests : IAsyncLifetime
             accessor,
             httpClient: _provider.CreateClient(),
             redirectUri: "http://localhost/callback",
-            stateSecret: "test-state-secret-key-for-hmac",
+            stateSecret: "test-state-secret-key-for-hmac-signing-32+",
             allowDefaultSessionFallback: true
         );
 

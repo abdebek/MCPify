@@ -69,7 +69,7 @@ public class AuthCallbackTests
                 scope: "scope",
                 secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
                 mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
-                stateSecret: "test-state-secret-key-for-hmac"
+                stateSecret: "test-state-secret-key-for-hmac-signing-32+"
             ));
 
         var app = builder.Build();

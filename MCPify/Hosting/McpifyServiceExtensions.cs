@@ -153,16 +153,14 @@ public static class McpifyServiceExtensions
         // options.DefaultScheme = McpAuthenticationDefaults.AuthenticationScheme themselves.
         //
         // The "Bearer" alias is registered because the SDK's McpAuthenticationHandler
-        // internally forwards to a "Bearer" scheme for token validation. If the host already
-        // registered a "Bearer" scheme (e.g. via AddJwtBearer), AddScheme is a no-op for that
-        // name and the host's handler wins — which is the correct composition.
+        // internally forwards to a "Bearer" scheme for token validation. We only register it
+        // if no "Bearer" scheme exists yet, so a host's AddJwtBearer("Bearer") wins.
         services.AddAuthentication()
             .AddScheme<McpAuthenticationOptions, McpAuthenticationHandler>(
                 McpAuthenticationDefaults.AuthenticationScheme,
-                _ => { })
-            .AddScheme<McpAuthenticationOptions, McpAuthenticationHandler>(
-                "Bearer",
                 _ => { });
+
+        services.TryAddBearerMcpScheme();
 
         return services;
     }
@@ -194,4 +192,35 @@ public static class McpifyServiceExtensions
         });
     }
 
+    /// <summary>
+    /// Registers the "Bearer" alias for the MCP authentication handler, but only if no
+    /// "Bearer" scheme is already registered. This avoids <see cref="InvalidOperationException"/>
+    /// when the host has already called <c>AddJwtBearer("Bearer")</c>.
+    /// </summary>
+    private static void TryAddBearerMcpScheme(this IServiceCollection services)
+    {
+        services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<AuthenticationOptions>, ConfigureBearerScheme>());
+    }
+
+    /// <summary>
+    /// Configures the "Bearer" scheme to use <see cref="McpAuthenticationHandler"/> only if
+    /// no handler has been registered for "Bearer" yet. Runs late so host registrations win.
+    /// </summary>
+    private sealed class ConfigureBearerScheme : IConfigureOptions<AuthenticationOptions>
+    {
+        public void Configure(AuthenticationOptions options) => Configure(McpAuthenticationDefaults.AuthenticationScheme, options);
+
+        public void Configure(string? name, AuthenticationOptions options)
+        {
+            if (options.SchemeMap.ContainsKey("Bearer"))
+            {
+                return;
+            }
+
+            options.AddScheme("Bearer", b =>
+            {
+                b.HandlerType = typeof(McpAuthenticationHandler);
+            });
+        }
+    }
 }

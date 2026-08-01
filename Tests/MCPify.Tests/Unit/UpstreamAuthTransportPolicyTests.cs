@@ -297,4 +297,26 @@ public class UpstreamAuthTransportPolicyTests
         Assert.Equal("App", authOptions.DefaultAuthenticateScheme);
         Assert.Equal("App", authOptions.DefaultChallengeScheme);
     }
+
+    [Fact]
+    public void AddMcpify_DoesNotThrow_WhenHostRegistersBearerScheme()
+    {
+        var services = new ServiceCollection();
+
+        // Host registers JwtBearer("Bearer") before AddMcpify
+        services.AddAuthentication()
+            .AddJwtBearer("Bearer", _ => { });
+
+        // Should not throw on Bearer scheme conflict
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var authOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Authentication.AuthenticationOptions>>().Value;
+
+        // Host's Bearer scheme should be preserved (not overwritten by MCP handler)
+        Assert.Contains(authOptions.SchemeMap.Keys, k => k == "Bearer");
+    }
 }
