@@ -17,24 +17,15 @@ public class AuthenticationFactoryTokenProvider : ITokenProvider
         _serviceProvider = serviceProvider;
     }
 
-    public async Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         if (_authenticationFactory == null)
         {
-            return null;
+            return false;
         }
 
         var authProvider = _authenticationFactory.Invoke(_serviceProvider);
-
-        using var tempRequest = new HttpRequestMessage();
-        await authProvider.ApplyAsync(tempRequest, cancellationToken);
-
-        var authHeader = tempRequest.Headers.Authorization;
-        if (authHeader != null)
-        {
-            return $"{authHeader.Scheme} {authHeader.Parameter}";
-        }
-
-        return null;
+        await authProvider.ApplyAsync(request, cancellationToken);
+        return true;
     }
 }

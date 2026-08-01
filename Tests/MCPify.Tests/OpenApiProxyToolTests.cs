@@ -64,6 +64,42 @@ public class OpenApiProxyToolTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task InvokeAsync_ServerManaged_AppliesApiKeyHeader_NotJustAuthorization()
+    {
+        var descriptor = new OpenApiOperationDescriptor(
+            Name: "apikey_check",
+            Route: "/apikey-check",
+            Method: OperationType.Get,
+            Operation: new OpenApiOperation()
+        );
+
+        var apiKeyAuth = new ApiKeyAuthentication("X-API-Key", "secret-key-123", ApiKeyLocation.Header);
+        var serviceProvider = new ServiceCollection()
+            .AddSingleton<IMcpContextAccessor>(new MockMcpContextAccessor())
+            .BuildServiceProvider();
+
+        var tokenProvider = new AuthenticationFactoryTokenProvider(_ => apiKeyAuth, serviceProvider);
+        var tool = new OpenApiProxyTool(
+            descriptor,
+            _apiServer.BaseUrl,
+            _apiServer.CreateClient(),
+            _schema,
+            new McpifyOptions(),
+            tokenProvider
+        );
+
+        var services = new ServiceCollection().BuildServiceProvider();
+        var context = CreateContext(services, descriptor.Name, null);
+        var result = await tool.InvokeAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+        var content = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(content);
+
+        Assert.Equal("secret-key-123", payload?["apiKey"]);
+    }
+
+    [Fact]
     public async Task InvokeAsync_CallsCorrectUrl()
     {
         var descriptor = new OpenApiOperationDescriptor(

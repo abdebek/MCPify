@@ -145,4 +145,130 @@ public class UpstreamAuthTransportPolicyTests
             descriptor => descriptor.ServiceType == typeof(IHostedService) &&
                           descriptor.ImplementationType?.Name == "HttpPassThroughWarningHostedService");
     }
+
+    [Fact]
+    public void AddMcpify_MigratesLegacyTokenSourceServer_WithFactory_ToServerManaged()
+    {
+        var services = new ServiceCollection();
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+            options.LocalEndpoints = new LocalEndpointsOptions
+            {
+#pragma warning disable CS0612
+                Enabled = true,
+                TokenSource = TokenSource.Server,
+                AuthenticationFactory = _ => new BearerAuthentication("legacy-token")
+#pragma warning restore CS0612
+            };
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<McpifyOptions>();
+        Assert.NotNull(options.LocalEndpoints?.UpstreamAuth);
+
+        var provider = options.LocalEndpoints!.UpstreamAuth!.Build(serviceProvider);
+        Assert.IsType<AuthenticationFactoryTokenProvider>(provider);
+    }
+
+    [Fact]
+    public void AddMcpify_MigratesLegacyTokenSourceClient_ToPassThrough()
+    {
+        var services = new ServiceCollection();
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+            options.ExternalApis.Add(new ExternalApiOptions
+            {
+                ApiBaseUrl = "https://api.example.com",
+#pragma warning disable CS0612
+                TokenSource = TokenSource.Client
+#pragma warning restore CS0612
+            });
+            options.AllowClientTokenPassthrough = true;
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<McpifyOptions>();
+        Assert.NotNull(options.ExternalApis[0].UpstreamAuth);
+
+        var provider = options.ExternalApis[0].UpstreamAuth!.Build(serviceProvider);
+        Assert.IsType<McpContextTokenProvider>(provider);
+    }
+
+    [Fact]
+    public void AddMcpify_MigratesLegacyTokenSourceNone_ToNoneUpstreamAuth()
+    {
+        var services = new ServiceCollection();
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+            options.ExternalApis.Add(new ExternalApiOptions
+            {
+                ApiBaseUrl = "https://api.example.com",
+#pragma warning disable CS0612
+                TokenSource = TokenSource.None
+#pragma warning restore CS0612
+            });
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<McpifyOptions>();
+        Assert.NotNull(options.ExternalApis[0].UpstreamAuth);
+
+        var provider = options.ExternalApis[0].UpstreamAuth!.Build(serviceProvider);
+        Assert.IsType<NoTokenProvider>(provider);
+    }
+
+    [Fact]
+    public void AddMcpify_MigratesLegacyTokenSourceBoth_WithFactory_ToFallback()
+    {
+        var services = new ServiceCollection();
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+            options.ExternalApis.Add(new ExternalApiOptions
+            {
+                ApiBaseUrl = "https://api.example.com",
+#pragma warning disable CS0612
+                TokenSource = TokenSource.Both,
+                AuthenticationFactory = _ => new BearerAuthentication("server-token")
+#pragma warning restore CS0612
+            });
+            options.AllowClientTokenPassthrough = true;
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<McpifyOptions>();
+        Assert.NotNull(options.ExternalApis[0].UpstreamAuth);
+
+        var provider = options.ExternalApis[0].UpstreamAuth!.Build(serviceProvider);
+        Assert.IsType<CompositeTokenProvider>(provider);
+    }
+
+    [Fact]
+    public void AddMcpify_LegacyTokenSourceServer_WithoutFactory_FallsBackToTransportDefault()
+    {
+        var services = new ServiceCollection();
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Stdio;
+            options.LocalEndpoints = new LocalEndpointsOptions
+            {
+#pragma warning disable CS0612
+                Enabled = true,
+                TokenSource = TokenSource.Server
+                // No AuthenticationFactory set
+#pragma warning restore CS0612
+            };
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var options = serviceProvider.GetRequiredService<McpifyOptions>();
+        Assert.NotNull(options.LocalEndpoints?.UpstreamAuth);
+
+        // Stdio default is PassThrough
+        var provider = options.LocalEndpoints!.UpstreamAuth!.Build(serviceProvider);
+        Assert.IsType<McpContextTokenProvider>(provider);
+    }
 }

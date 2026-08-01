@@ -62,7 +62,8 @@ internal static class UpstreamAuthTransportPolicy
             return;
         }
 
-        options.UpstreamAuth = CreateTransportDefault(transport);
+        var migrated = MigrateLegacy(options.TokenSource, options.AuthenticationFactory);
+        options.UpstreamAuth = migrated ?? CreateTransportDefault(transport);
     }
 
     private static void NormalizeDefaults(ExternalApiOptions options, McpTransportType transport)
@@ -72,8 +73,34 @@ internal static class UpstreamAuthTransportPolicy
             return;
         }
 
-        options.UpstreamAuth = CreateTransportDefault(transport);
+        var migrated = MigrateLegacy(options.TokenSource, options.AuthenticationFactory);
+        options.UpstreamAuth = migrated ?? CreateTransportDefault(transport);
     }
+
+    /// <summary>
+    /// Maps the obsolete <see cref="TokenSource"/> + <see cref="ExternalApiOptions.AuthenticationFactory"/>
+    /// pair to the equivalent <see cref="UpstreamAuth"/> strategy so existing config keeps working.
+    /// Returns null when no legacy values are set (caller falls back to the transport default).
+    /// </summary>
+#pragma warning disable CS0612 // Type or member is obsolete
+    private static UpstreamAuth? MigrateLegacy(
+        TokenSource tokenSource,
+        Func<IServiceProvider, IAuthenticationProvider>? authenticationFactory)
+    {
+        return tokenSource switch
+        {
+            TokenSource.None => UpstreamAuth.None(),
+            TokenSource.Client => UpstreamAuth.PassThrough(),
+            TokenSource.Server => authenticationFactory is not null
+                ? UpstreamAuth.ServerManaged(authenticationFactory)
+                : null,
+            TokenSource.Both => authenticationFactory is not null
+                ? UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), UpstreamAuth.ServerManaged(authenticationFactory))
+                : UpstreamAuth.PassThrough(),
+            _ => null
+        };
+    }
+#pragma warning restore CS0612
 
     private static bool HasPassThroughFirstSelection(McpifyOptions options)
     {

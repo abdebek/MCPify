@@ -76,19 +76,7 @@ public class OpenApiProxyTool : McpServerTool
 
             var request = BuildHttpRequest(argsDict);
 
-            var authToken = await _tokenProvider.GetTokenAsync(token);
-            if (!string.IsNullOrEmpty(authToken))
-            {
-                var parts = authToken.Split(' ', 2);
-                if (parts.Length == 2)
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue(parts[0], parts[1]);
-                }
-                else
-                {
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
-                }
-            }
+            await _tokenProvider.ApplyAsync(request, token);
 
             var response = await _http.SendAsync(request, token);
             var content = await response.Content.ReadAsStringAsync(token);

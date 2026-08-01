@@ -15,8 +15,8 @@ public sealed class NoTokenProvider : ITokenProvider
     {
     }
 
-    public Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
+    public Task<bool> ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<string?>(null);
+        return Task.FromResult(false);
     }
 }

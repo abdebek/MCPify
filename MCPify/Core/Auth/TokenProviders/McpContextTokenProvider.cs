@@ -13,15 +13,26 @@ public class McpContextTokenProvider : ITokenProvider
         _mcpContextAccessor = mcpContextAccessor;
     }
 
-    public Task<string?> GetTokenAsync(CancellationToken cancellationToken = default)
+    public Task<bool> ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         var token = _mcpContextAccessor.AccessToken;
 
-        if (!string.IsNullOrEmpty(token) && !token.Contains(' '))
+        if (string.IsNullOrEmpty(token))
         {
-            token = $"Bearer {token}";
+            return Task.FromResult(false);
         }
 
-        return Task.FromResult(token);
+        var value = token.Contains(' ') ? token : $"Bearer {token}";
+        var parts = value.Split(' ', 2);
+        if (parts.Length == 2)
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(parts[0], parts[1]);
+        }
+        else
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        return Task.FromResult(true);
     }
 }

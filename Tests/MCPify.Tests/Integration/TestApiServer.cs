@@ -55,6 +55,12 @@ public sealed class TestApiServer : IAsyncDisposable
             var auth = context.Request.Headers.Authorization.ToString();
             await context.Response.WriteAsJsonAsync(new { authorization = auth });
         });
+
+        app.MapGet("/apikey-check", async context =>
+        {
+            var apiKey = context.Request.Headers["X-API-Key"].ToString();
+            await context.Response.WriteAsJsonAsync(new { apiKey });
+        });
     }
 
     private static int GetRandomUnusedPort()
