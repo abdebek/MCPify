@@ -626,6 +626,44 @@ MCPify exposes all OpenAPI operations as **tools**, not MCP resources. This is a
 - **Agent UX.** A single tool list is simpler for agents to reason about than a mixed resource/tool surface.
 - **Future.** Resource template mapping for pure GET-by-id endpoints is tracked for a later preview.
 
+### Local Endpoints: Self-Loopback Design
+
+When `LocalEndpoints.Enabled = true`, MCPify discovers your ASP.NET Core endpoints and creates proxy tools that invoke them via HTTP self-loopback (the app calls its own listening address). This is a deliberate design choice:
+
+- **Full pipeline fidelity.** Self-loopback runs the complete middleware pipeline (auth, validation, serialization, model binding).
+- **No fragile fake contexts.** In-process dispatch via constructed `HttpContext` bypasses middleware and breaks auth, CORS, and serialization.
+- **Performance.** The loopback is to `localhost` — negligible latency for typical tool call volumes.
+
+Use `BaseUrlOverride` to control the target address when the app listens on multiple URLs or runs behind a proxy.
+
+## Custom Tools
+
+Beyond OpenAPI-imported tools, you can register custom MCP tools with a delegate handler:
+
+```csharp
+builder.Services.AddMcpifyTool(
+    "search_docs",
+    "Search internal documentation by query string",
+    async (args, ct) =>
+    {
+        var query = args?.GetProperty("query").GetString() ?? "";
+        var results = await _searchService.SearchAsync(query, ct);
+        return JsonSerializer.Serialize(results);
+    },
+    inputSchema: new
+    {
+        type = "object",
+        properties = new { query = new { type = "string", description = "Search query" } },
+        required = new[] { "query" }
+    });
+```
+
+A simpler overload accepts a string-returning handler. Tools registered this way are automatically wrapped in `SessionAwareToolDecorator` for session context and scope enforcement.
+
+## Security
+
+See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model covering authentication layers, pass-through token safety, SSRF protection, token storage, and hosted deployment checklist.
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.

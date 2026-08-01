@@ -17,6 +17,8 @@ using Microsoft.Extensions.Options;
 using ModelContextProtocol.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Hosting;
+using ModelContextProtocol.Protocol;
+using System.Text.Json;
 
 namespace MCPify.Hosting;
 
@@ -204,6 +206,36 @@ public static class McpifyServiceExtensions
     private static void TryAddBearerMcpScheme(this IServiceCollection services)
     {
         services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<AuthenticationOptions>, ConfigureBearerScheme>());
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Registers a custom MCP tool with a delegate handler.
+    /// The tool is wrapped in SessionAwareToolDecorator automatically.
+    /// </summary>
+    public static IServiceCollection AddMcpifyTool(
+        this IServiceCollection services,
+        string name,
+        string description,
+        Func<RequestContext<CallToolRequestParams>, CancellationToken, ValueTask<CallToolResult>> handler,
+        object? inputSchema = null)
+    {
+        services.AddSingleton<McpServerTool>(sp => new DelegateTool(name, description, inputSchema, handler));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a custom MCP tool with a simple string-returning handler.
+    /// </summary>
+    public static IServiceCollection AddMcpifyTool(
+        this IServiceCollection services,
+        string name,
+        string description,
+        Func<JsonElement?, CancellationToken, ValueTask<string>> handler,
+        object? inputSchema = null)
+    {
+        services.AddSingleton<McpServerTool>(sp => DelegateToolBuilder.Create(name, description, handler, inputSchema));
+        return services;
     }
 
     /// <summary>
