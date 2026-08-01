@@ -26,22 +26,102 @@ internal static class UpstreamAuthTransportPolicy
                 "Set McpifyOptions.AllowClientTokenPassthrough = true to opt in explicitly. " +
                 "Use server-managed upstream auth for hosted or multi-user deployments.");
         }
+
+        ValidateMultiHostPassThrough(options);
+    }
+
+    private static void ValidateMultiHostPassThrough(McpifyOptions options)
+    {
+        var hosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var api in options.ExternalApis)
+        {
+            if (api.UpstreamAuth is null || !UsesPassThrough(api.UpstreamAuth))
+                continue;
+            if (TryGetHost(api.ApiBaseUrl, out var host))
+                hosts.Add(host);
+        }
+
+        if (hosts.Count >= 2 && !options.AllowMultiHostPassThrough)
+        {
+            throw new InvalidOperationException(
+                $"PassThrough is configured for {hosts.Count} distinct ExternalApi hosts ({string.Join(", ", hosts)}). " +
+                "The same MCP client token would be forwarded to all of them — this is unsafe when APIs have different audiences. " +
+                "Set McpifyOptions.AllowMultiHostPassThrough = true only if they share the same token audience, " +
+                "or use ServerManaged/TokenExchange with distinct provider names per API.");
+        }
     }
 
     internal static void WarnIfNeeded(McpifyOptions options, ILogger logger)
     {
-        if (options.Transport != McpTransportType.Http ||
-            !options.AllowClientTokenPassthrough ||
-            !options.HttpPassThroughConfigured ||
-            options.HttpPassThroughWarningLogged)
+        if (options.Transport == McpTransportType.Http &&
+            options.AllowClientTokenPassthrough &&
+            options.HttpPassThroughConfigured &&
+            !options.HttpPassThroughWarningLogged)
         {
-            return;
+            options.HttpPassThroughWarningLogged = true;
+            logger.LogWarning(
+                "[MCPify] Client token pass-through is enabled on HTTP transport. " +
+                "This is unsafe for hosted or multi-user deployments and should be used only for local/dev scenarios.");
         }
 
-        options.HttpPassThroughWarningLogged = true;
+        WarnMultiHostPassThrough(options, logger);
+    }
+
+    /// <summary>
+    /// Logs when PassThrough is configured for multiple ExternalApi base hosts — the same
+    /// MCP client token would be sent to distinct audiences.
+    /// </summary>
+    internal static void WarnMultiHostPassThrough(McpifyOptions options, ILogger logger)
+    {
+        if (options.MultiHostPassThroughWarningLogged)
+            return;
+
+        var hosts = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var api in options.ExternalApis)
+        {
+            if (api.UpstreamAuth is null || !UsesPassThrough(api.UpstreamAuth))
+                continue;
+            if (TryGetHost(api.ApiBaseUrl, out var host))
+                hosts.Add(host);
+        }
+
+        if (hosts.Count < 2)
+            return;
+
+        options.MultiHostPassThroughWarningLogged = true;
         logger.LogWarning(
-            "[MCPify] Client token pass-through is enabled on HTTP transport. " +
-            "This is unsafe for hosted or multi-user deployments and should be used only for local/dev scenarios.");
+            "[MCPify] PassThrough is active for {Count} distinct hosts ({Hosts}). " +
+            "Ensure they share the same token audience.",
+            hosts.Count,
+            string.Join(", ", hosts));
+    }
+
+    internal static bool UsesPassThrough(UpstreamAuth upstreamAuth)
+    {
+        return upstreamAuth switch
+        {
+            PassThroughUpstreamAuth => true,
+            FallbackUpstreamAuth fallback => fallback.Strategies.Any(UsesPassThrough),
+            _ => false
+        };
+    }
+
+    private static bool TryGetHost(string? apiBaseUrl, out string host)
+    {
+        host = "";
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var uri) ||
+            string.IsNullOrEmpty(uri.Host))
+        {
+            return false;
+        }
+
+        host = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+        return true;
     }
 
     private static void NormalizeDefaults(McpifyOptions options)

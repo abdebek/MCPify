@@ -46,7 +46,7 @@ public class DeviceCodeAuthenticationTests : IAsyncLifetime
         Assert.NotNull(promptedCode);
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
 
-        var saved = await store.GetTokenAsync("test-session", "DeviceCode");
+        var saved = await store.GetTokenAsync("test-session", auth.ProviderName);
         Assert.NotNull(saved);
         Assert.Equal(saved!.AccessToken, request.Headers.Authorization?.Parameter);
     }

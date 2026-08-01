@@ -94,7 +94,7 @@ public class SampleIntegrationTests : IAsyncLifetime
         await PerformOAuthLogin(sessionId);
 
         var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
-        var tokenData = await tokenStore.GetTokenAsync(sessionId, "OAuth", CancellationToken.None);
+        var tokenData = await tokenStore.GetTokenAsync(sessionId, GetOAuthProviderName(), CancellationToken.None);
         Assert.NotNull(tokenData);
         Assert.False(string.IsNullOrEmpty(tokenData!.AccessToken));
     }
@@ -298,7 +298,7 @@ public class SampleIntegrationTests : IAsyncLifetime
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
 
         var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
-        var tokenData = await tokenStore.GetTokenAsync("itest-no-session", "OAuth", CancellationToken.None);
+        var tokenData = await tokenStore.GetTokenAsync("itest-no-session", GetOAuthProviderName(), CancellationToken.None);
         Assert.NotNull(tokenData);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData!.AccessToken);
 
@@ -417,6 +417,9 @@ public class SampleIntegrationTests : IAsyncLifetime
 
     // --- Helpers ---
 
+    private string GetOAuthProviderName() =>
+        _app!.Services.GetRequiredService<OAuthAuthorizationCodeAuthentication>().ProviderName;
+
     private async Task PerformOAuthLogin(string sessionId)
     {
         _currentSessionId = sessionId;
@@ -470,7 +473,7 @@ public class SampleIntegrationTests : IAsyncLifetime
         var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
         TokenData? tokenData = null;
         if (_currentSessionId != null)
-            tokenData = await tokenStore.GetTokenAsync(_currentSessionId, "OAuth", CancellationToken.None);
+            tokenData = await tokenStore.GetTokenAsync(_currentSessionId, GetOAuthProviderName(), CancellationToken.None);
         if (tokenData != null)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
 

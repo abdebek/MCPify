@@ -18,6 +18,8 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private readonly string _providerName;
 
+    public string ProviderName => _providerName;
+
     public DeviceCodeAuthentication(
         string clientId,
         string deviceCodeEndpoint,
@@ -39,7 +41,7 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         _userPrompt = userPrompt;
         _httpClient = httpClient ?? HttpClientFallback.Create(nameof(DeviceCodeAuthentication));
         _resourceUrl = resourceUrl;
-        _providerName = providerName ?? "DeviceCode";
+        _providerName = AuthProviderNames.Resolve(providerName, AuthProviderNames.DeviceCodePrefix, clientId, tokenEndpoint);
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)

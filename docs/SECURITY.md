@@ -104,46 +104,42 @@ For production:
 
 ## Multi-IdP Token Isolation
 
-By default, all auth providers use a fixed store name (`"OAuth"`, `"ClientCredentials"`, `"DeviceCode"`, `"TokenExchange"`). **If you register multiple providers of the same type against different IdPs or APIs, they will collide** — last write wins, and one provider's token can be sent to another's audience.
+The token store key is `(sessionId, providerName)`.
 
-### Per-Provider Namespacing
+### Auto-namespaced defaults
 
-Every auth provider accepts an optional `providerName` parameter. Use a distinct name per API/IdP to isolate tokens:
+When `providerName` is **omitted**, MCPify derives a store name from the OAuth **client id**:
+
+| Type | Default when `providerName` is null |
+|------|-------------------------------------|
+| Authorization code | `OAuth:{clientId}` (e.g. `OAuth:demo-client-id`) |
+| Client credentials | `ClientCredentials:{clientId}` |
+| Device code | `DeviceCode:{clientId}` |
+
+Single-IdP hosts with one client id need no change. Multi-IdP hosts that use **different client ids** get automatic isolation. If two IdPs share the same client id string, set **explicit** `providerName` values.
 
 ```csharp
-// Two OAuth clients for different APIs — isolated in the token store
-services.AddSingleton(sp => new OAuthAuthorizationCodeAuthentication(
-    clientId: "entra-client",
-    authorizationEndpoint: "https://login.microsoftonline.com/.../authorize",
-    tokenEndpoint: "https://login.microsoftonline.com/.../token",
-    scope: "api-a",
-    secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
-    mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
-    redirectUri: "https://app/callback",
-    stateSecret: "...",
-    providerName: "OAuth:api-a"));
+// Automatic isolation (different client ids → different store slots)
+new OAuthAuthorizationCodeAuthentication(clientId: "entra-client", /* ... */);  // OAuth:entra-client
+new OAuthAuthorizationCodeAuthentication(clientId: "github-client", /* ... */); // OAuth:github-client
 
-services.AddSingleton(sp => new OAuthAuthorizationCodeAuthentication(
-    clientId: "github-client",
-    authorizationEndpoint: "https://github.com/login/oauth/authorize",
-    tokenEndpoint: "https://github.com/login/oauth/access_token",
-    scope: "repo",
-    secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
-    mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
-    redirectUri: "https://app/callback",
-    stateSecret: "...",
-    providerName: "OAuth:github"));
+// Explicit override when you need a stable or shared name
+new OAuthAuthorizationCodeAuthentication(
+    clientId: "shared-client",
+    /* ... */,
+    providerName: "OAuth:api-a");
 ```
 
-The token store key is `(sessionId, providerName)`. Different provider names = different storage slots = no collision.
+**Breaking note (0.0.15-preview):** older defaults used the bare names `"OAuth"` / `"ClientCredentials"` / `"DeviceCode"`. Existing encrypted token files under those names will not be picked up after upgrade unless you set `providerName` back to the old value or re-login.
 
 ### Pass-Through Cross-Audience Risk
 
 `UpstreamAuth.PassThrough()` sends the inbound MCP client token to the upstream API. If multiple tools with different `ApiBaseUrl` values use pass-through, the same token goes to all of them. This is intentional but risky:
 
 - Only use pass-through when all upstream APIs accept the same token audience
-- Prefer `UpstreamAuth.ServerManaged(providerName: "OAuth:api-x")` per API
+- Prefer `UpstreamAuth.ServerManaged(...)` with distinct OAuth clients / `providerName`s per API
 - On multi-user HTTP hosts, never use pass-through without explicit opt-in
+- At startup, MCPify **logs a warning** when two or more `ExternalApiOptions` with **different hosts** use PassThrough (including inside `Fallback`)
 
 ### `allowDefaultSessionFallback`
 
@@ -151,10 +147,10 @@ When enabled, the OAuth provider dual-writes tokens to both the real session and
 
 ### Checklist for Multi-IdP Hosts
 
-- [ ] Each IdP/API has a unique `providerName` (e.g. `"OAuth:api-a"`, `"OAuth:api-b"`)
+- [ ] Different IdPs use different `clientId`s **or** explicit unique `providerName`s
 - [ ] Each `ExternalApiOptions.UpstreamAuth` points to the correct provider factory
 - [ ] `allowDefaultSessionFallback` is `false` on multi-user HTTP hosts
-- [ ] `PassThrough` is not used for APIs with different audiences
+- [ ] `PassThrough` is not used for APIs with different audiences (watch startup multi-host warning)
 - [ ] Each `TokenExchange` config has a distinct `ProviderName`
 
 - OAuth state tokens are truncated in log messages

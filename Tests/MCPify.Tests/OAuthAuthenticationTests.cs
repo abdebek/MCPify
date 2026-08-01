@@ -17,7 +17,6 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor();
-        await store.SaveTokenAsync("test-session", "OAuth", new TokenData("valid_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -29,6 +28,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
             stateSecret: "test-state-secret-key-for-hmac-signing-32+");
+
+        await store.SaveTokenAsync("test-session", auth.ProviderName, new TokenData("valid_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -43,7 +44,6 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor();
-        await store.SaveTokenAsync("test-session", "OAuth", new TokenData("expired_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(-10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -56,6 +56,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             redirectUri: "http://localhost/callback",
             stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
+        await store.SaveTokenAsync("test-session", auth.ProviderName, new TokenData("expired_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(-10)));
+
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
         await auth.ApplyAsync(request);
@@ -63,7 +65,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
         Assert.NotEqual("expired_token", request.Headers.Authorization?.Parameter);
 
-        var saved = await store.GetTokenAsync("test-session", "OAuth");
+        var saved = await store.GetTokenAsync("test-session", auth.ProviderName);
         Assert.NotNull(saved);
         Assert.Equal(request.Headers.Authorization?.Parameter, saved!.AccessToken);
     }
@@ -73,7 +75,6 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor { SessionId = "session-a" };
-        await store.SaveTokenAsync(Constants.DefaultSessionId, "OAuth", new TokenData("default_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -87,6 +88,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             allowDefaultSessionFallback: true,
             stateSecret: "test-state-secret-key-for-hmac-signing-32+");
 
+        await store.SaveTokenAsync(Constants.DefaultSessionId, auth.ProviderName, new TokenData("default_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
+
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
         await auth.ApplyAsync(request);
@@ -94,7 +97,7 @@ public class OAuthAuthenticationTests : IAsyncLifetime
         Assert.Equal("Bearer", request.Headers.Authorization?.Scheme);
         Assert.Equal("default_token", request.Headers.Authorization?.Parameter);
 
-        var sessionToken = await store.GetTokenAsync("session-a", "OAuth");
+        var sessionToken = await store.GetTokenAsync("session-a", auth.ProviderName);
         Assert.NotNull(sessionToken);
         Assert.Equal("default_token", sessionToken!.AccessToken);
     }
@@ -104,7 +107,6 @@ public class OAuthAuthenticationTests : IAsyncLifetime
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor { SessionId = "session-b" };
-        await store.SaveTokenAsync(Constants.DefaultSessionId, "OAuth", new TokenData("default_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -117,6 +119,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             redirectUri: "http://localhost/callback",
             allowDefaultSessionFallback: false,
             stateSecret: "test-state-secret-key-for-hmac-signing-32+");
+
+        await store.SaveTokenAsync(Constants.DefaultSessionId, auth.ProviderName, new TokenData("default_token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 

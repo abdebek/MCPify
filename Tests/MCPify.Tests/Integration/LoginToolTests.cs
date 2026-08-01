@@ -66,7 +66,7 @@ public class LoginToolTests
         var toolTask = tool.InvokeAsync(context, CancellationToken.None);
 
         await Task.Delay(500);
-        await tokenStore.SaveTokenAsync("default", "OAuth", new TokenData("test-access-token", null, null), CancellationToken.None);
+        await tokenStore.SaveTokenAsync("default", auth.ProviderName, new TokenData("test-access-token", null, null), CancellationToken.None);
 
         var result = await toolTask;
 
@@ -164,7 +164,7 @@ public class LoginToolTests
             LoginBrowserBehavior = BrowserLaunchBehavior.Always
         });
 
-        await tokenStore.SaveTokenAsync("session-x", "OAuth", new TokenData("token-x", "refresh-x", DateTimeOffset.UtcNow.AddMinutes(10)));
+        await tokenStore.SaveTokenAsync("session-x", auth.ProviderName, new TokenData("token-x", "refresh-x", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
@@ -177,7 +177,7 @@ public class LoginToolTests
 
         Assert.True(result.IsError != true);
 
-        var copied = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, "OAuth");
+        var copied = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, auth.ProviderName);
         Assert.NotNull(copied);
         Assert.Equal("token-x", copied!.AccessToken);
     }

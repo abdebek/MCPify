@@ -43,17 +43,18 @@ public class ClientCredentialsAuthenticationTests
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor();
-        await store.SaveTokenAsync("test-session", "ClientCredentials", new TokenData("cached-token", null, DateTimeOffset.UtcNow.AddMinutes(5)));
 
         var handler = new FailOnSendHandler();
         var auth = new ClientCredentialsAuthentication(
             "client-id",
             "client-secret",
-            "https://auth.example.com/token",
-            "scope",
+            "http://token-endpoint",
+            "scopeA scopeB",
             store,
             accessor,
             new HttpClient(handler));
+
+        await store.SaveTokenAsync("test-session", auth.ProviderName, new TokenData("cached-token", null, DateTimeOffset.UtcNow.AddMinutes(5)));
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
         await auth.ApplyAsync(request);
@@ -69,7 +70,6 @@ public class ClientCredentialsAuthenticationTests
     {
         var store = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor();
-        await store.SaveTokenAsync("test-session", "ClientCredentials", new TokenData("expiring-token", null, DateTimeOffset.UtcNow.AddSeconds(30)));
 
         var handler = new StubTokenHandler("new-cc-token");
         var auth = new ClientCredentialsAuthentication(
@@ -81,6 +81,8 @@ public class ClientCredentialsAuthenticationTests
             accessor,
             new HttpClient(handler));
 
+        await store.SaveTokenAsync("test-session", auth.ProviderName, new TokenData("expiring-token", null, DateTimeOffset.UtcNow.AddSeconds(30)));
+
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
         await auth.ApplyAsync(request);
 
@@ -89,7 +91,7 @@ public class ClientCredentialsAuthenticationTests
         Assert.Equal("new-cc-token", request.Headers.Authorization.Parameter);
         Assert.Equal(1, handler.CallCount);
 
-        var saved = await store.GetTokenAsync("test-session", "ClientCredentials");
+        var saved = await store.GetTokenAsync("test-session", auth.ProviderName);
         Assert.NotNull(saved);
         Assert.Equal("new-cc-token", saved!.AccessToken);
         Assert.True(saved.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(50));

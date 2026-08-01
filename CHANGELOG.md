@@ -7,6 +7,9 @@ This project follows [Semantic Versioning](https://semver.org/) with a `*-previe
 
 ### Breaking Changes (since 0.0.14-preview)
 
+- **Default token-store `providerName` is namespaced by client id** (`OAuth:{clientId}`, `ClientCredentials:{clientId}`, `DeviceCode:{clientId}`) when `providerName` is omitted. Explicit `providerName` is unchanged. Existing tokens stored under bare `"OAuth"` / `"ClientCredentials"` / `"DeviceCode"` will not match until re-login or setting the old name explicitly.
+
+
 - **MCP SDK upgraded to 2.0.0** (from 0.6.0-preview.1). Streamable HTTP is now the only HTTP transport; SSE transport is removed.
 - **Project SDK changed** from `Microsoft.NET.Sdk.Web` to `Microsoft.NET.Sdk` + `FrameworkReference Include="Microsoft.AspNetCore.App"`. Library no longer forces a web project.
 - **`ITokenProvider` interface** changed from returning a token string to `ApplyAsync(HttpRequestMessage) -> Task<bool>`. Custom `ITokenProvider` implementations must be updated.

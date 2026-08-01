@@ -17,6 +17,8 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private readonly string _providerName;
 
+    public string ProviderName => _providerName;
+
     public ClientCredentialsAuthentication(
         string clientId,
         string clientSecret,
@@ -36,7 +38,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         _mcpContextAccessor = mcpContextAccessor;
         _httpClient = httpClient ?? HttpClientFallback.Create(nameof(ClientCredentialsAuthentication));
         _resourceUrl = resourceUrl;
-        _providerName = providerName ?? "ClientCredentials";
+        _providerName = AuthProviderNames.Resolve(providerName, AuthProviderNames.ClientCredentialsPrefix, clientId, tokenEndpoint);
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)

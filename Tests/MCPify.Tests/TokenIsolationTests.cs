@@ -2,9 +2,6 @@ using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.OAuth;
 using MCPify.Tests;
-using Moq;
-using System.Net;
-using System.Text.Json;
 using Xunit;
 
 namespace MCPify.Tests;
@@ -15,7 +12,7 @@ public class TokenIsolationTests
     private readonly IMcpContextAccessor _accessor = new McpContextAccessor();
 
     private OAuthAuthorizationCodeAuthentication CreateOAuth(
-        string providerName,
+        string? providerName,
         string scope = "api",
         string clientId = "client-a")
     {
@@ -61,12 +58,46 @@ public class TokenIsolationTests
     }
 
     [Fact]
-    public async Task DefaultProviderName_IsOAuth()
+    public void DefaultProviderName_IsNamespacedByClientId()
     {
-        var oauth = CreateOAuth(providerName: null!);
-        // The default provider name should be "OAuth" — verify via the LoginResult
-        var loginResult = oauth.BuildAuthorizationUrl("test-session");
-        Assert.NotEmpty(loginResult);
+        var oauth = CreateOAuth(providerName: null, clientId: "entra-client");
+        Assert.Equal("OAuth:entra-client@auth-a.example.com", oauth.ProviderName);
+
+        var other = CreateOAuth(providerName: null, clientId: "github-client");
+        Assert.Equal("OAuth:github-client@auth-a.example.com", other.ProviderName);
+        Assert.NotEqual(oauth.ProviderName, other.ProviderName);
+    }
+
+    [Fact]
+    public void ExplicitProviderName_OverridesAutoNamespace()
+    {
+        var oauth = CreateOAuth(providerName: "OAuth:custom-slot", clientId: "entra-client");
+        Assert.Equal("OAuth:custom-slot", oauth.ProviderName);
+    }
+
+    [Fact]
+    public void AuthProviderNames_SanitizesClientId()
+    {
+        Assert.Equal("OAuth:my_client", AuthProviderNames.Resolve(null, "OAuth", "my client", null));
+        Assert.Equal("OAuth:default", AuthProviderNames.Resolve(null, "OAuth", "   ", null));
+        Assert.Equal("OAuth:explicit", AuthProviderNames.Resolve("OAuth:explicit", "OAuth", "ignored", "https://x.com/token"));
+    }
+
+    [Fact]
+    public void AuthProviderNames_IncludesTokenHost()
+    {
+        Assert.Equal("OAuth:app@login.microsoftonline.com",
+            AuthProviderNames.Resolve(null, "OAuth", "app", "https://login.microsoftonline.com/tenant/oauth2/v2.0/token"));
+        Assert.Equal("OAuth:app@github.com",
+            AuthProviderNames.Resolve(null, "OAuth", "app", "https://github.com/login/oauth/access_token"));
+    }
+
+    [Fact]
+    public void AuthProviderNames_SameClientIdDifferentHosts_Isolated()
+    {
+        var name1 = AuthProviderNames.Resolve(null, "OAuth", "shared", "https://idp-a.com/token");
+        var name2 = AuthProviderNames.Resolve(null, "OAuth", "shared", "https://idp-b.com/token");
+        Assert.NotEqual(name1, name2);
     }
 
     [Fact]

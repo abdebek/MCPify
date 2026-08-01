@@ -64,7 +64,7 @@ public class OAuthE2ETests : IAsyncLifetime
         Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
         Assert.False(string.IsNullOrEmpty(request.Headers.Authorization.Parameter));
 
-        var stored = await tokenStore.GetTokenAsync("test-session", "OAuth");
+        var stored = await tokenStore.GetTokenAsync("test-session", auth.ProviderName);
         Assert.NotNull(stored);
         Assert.Equal(request.Headers.Authorization.Parameter, stored!.AccessToken);
     }
@@ -106,7 +106,6 @@ public class OAuthE2ETests : IAsyncLifetime
     {
         var tokenStore = new InMemoryTokenStore();
         var accessor = new MockMcpContextAccessor { AccessToken = "pass-through-token" };
-        await tokenStore.SaveTokenAsync("test-session", "OAuth", new TokenData("server-token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var auth = new OAuthAuthorizationCodeAuthentication(
             "client_id",
@@ -119,6 +118,8 @@ public class OAuthE2ETests : IAsyncLifetime
             redirectUri: "http://localhost/callback",
             stateSecret: "test-state-secret-key-for-hmac-signing-32+"
         );
+
+        await tokenStore.SaveTokenAsync("test-session", auth.ProviderName, new TokenData("server-token", "refresh_token", DateTimeOffset.UtcNow.AddMinutes(10)));
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -217,7 +218,7 @@ public class OAuthE2ETests : IAsyncLifetime
 
         var tokenData = await auth.HandleAuthorizationCallbackAsync(code, state);
 
-        var defaultToken = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, "OAuth");
+        var defaultToken = await tokenStore.GetTokenAsync(Constants.DefaultSessionId, auth.ProviderName);
         Assert.NotNull(defaultToken);
         Assert.Equal(tokenData.AccessToken, defaultToken!.AccessToken);
     }

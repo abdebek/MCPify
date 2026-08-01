@@ -77,7 +77,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _stateSecret = resolvedStateSecret;
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
         _resourceUrl = resourceUrl;
-        _providerName = providerName ?? "OAuth";
+        _providerName = AuthProviderNames.Resolve(providerName, AuthProviderNames.OAuthPrefix, clientId, tokenEndpoint);
     }
 
     public virtual string BuildAuthorizationUrl(string sessionId)
