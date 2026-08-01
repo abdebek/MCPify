@@ -24,8 +24,19 @@ public class AuthenticationFactoryTokenProvider : ITokenProvider
             return false;
         }
 
+        // Snapshot the request state before applying so we can detect whether the provider
+        // actually modified anything. This prevents Fallback from treating a no-op provider
+        // as "auth applied" and stopping the chain prematurely.
+        var hadAuthorization = request.Headers.Authorization != null;
+        var headerCountBefore = request.Headers.Count();
+        var uriBefore = request.RequestUri?.ToString() ?? string.Empty;
+
         var authProvider = _authenticationFactory.Invoke(_serviceProvider);
         await authProvider.ApplyAsync(request, cancellationToken);
-        return true;
+
+        // Return true only if the provider actually changed something.
+        return request.Headers.Authorization != null && !hadAuthorization
+            || request.Headers.Count() != headerCountBefore
+            || (request.RequestUri?.ToString() ?? string.Empty) != uriBefore;
     }
 }

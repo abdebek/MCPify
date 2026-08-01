@@ -136,7 +136,9 @@ public class SessionAwareToolDecorator : McpServerTool
         var authService = services.GetService<IAuthorizationService>();
         if (authService == null)
         {
-            return null;
+            // Fail-closed: if the tool has scope requirements but no IAuthorizationService is
+            // registered, deny the call rather than silently allowing it.
+            return ScopeError("Scope enforcement is configured but IAuthorizationService is not registered. Call services.AddAuthorization() to enable scope checks.");
         }
 
         var result = await authService.AuthorizeAsync(principal, null, scopeRequirements);

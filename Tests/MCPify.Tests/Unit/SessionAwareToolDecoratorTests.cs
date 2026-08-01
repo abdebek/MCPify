@@ -127,6 +127,7 @@ public class SessionAwareToolDecoratorTests
     public async Task InvokeAsync_AllowsTool_WhenNoScopeRequirements()
     {
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddAuthorization();
         services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();
         var accessor = new McpContextAccessor();
@@ -142,6 +143,30 @@ public class SessionAwareToolDecoratorTests
 
         Assert.True(result.IsError != true);
         Assert.Equal("ok", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_FailsClosed_WhenScopeRequirementsButNoAuthorizationService()
+    {
+        var services = new ServiceCollection();
+        // No AddAuthorization() — IAuthorizationService not registered
+        var accessor = new McpContextAccessor();
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+
+        var provider = services.BuildServiceProvider();
+        var innerTool = new ScopeProtectedTool(new[] { new ScopeRequirement("api.read") });
+        var decorator = new SessionAwareToolDecorator(innerTool, provider);
+
+        // Set a principal so we get past the null-principal check and reach the IAuthorizationService check
+        httpContextAccessor.HttpContext!.User = new ClaimsPrincipal(
+            new ClaimsIdentity(new[] { new Claim("scope", "api.read") }, "test"));
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "session-1"), CancellationToken.None);
+
+        Assert.True(result.IsError == true);
+        Assert.Contains("IAuthorizationService", ReadText(result));
     }
 
     private static string ReadText(CallToolResult result)

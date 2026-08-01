@@ -247,4 +247,37 @@ public class OpenApiProxyToolTests : IAsyncLifetime
             return Task.CompletedTask;
         }
     }
+
+    private sealed class NoOpAuthProvider : IAuthenticationProvider
+    {
+        public Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
+    public async Task AuthenticationFactoryTokenProvider_ReturnsFalse_WhenProviderIsNoOp()
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var tokenProvider = new AuthenticationFactoryTokenProvider(_ => new NoOpAuthProvider(), serviceProvider);
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
+
+        var result = await tokenProvider.ApplyAsync(request, CancellationToken.None);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task AuthenticationFactoryTokenProvider_ReturnsTrue_WhenProviderAppliesAuth()
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var tokenProvider = new AuthenticationFactoryTokenProvider(_ => new TrackingAuthProvider(), serviceProvider);
+        var request = new HttpRequestMessage(HttpMethod.Get, "http://example.com");
+
+        var result = await tokenProvider.ApplyAsync(request, CancellationToken.None);
+
+        Assert.True(result);
+        Assert.NotNull(request.Headers.Authorization);
+    }
 }
