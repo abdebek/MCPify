@@ -15,6 +15,7 @@
 -   **Single registration path**: `MapMcpifyEndpoint` registers local + external tools
 -   **SSRF guard**, scope fail-closed enforcement, TokenExchange error handling
 -   **Playwright** Sample smoke tests (OAuth + MCP HTTP)
+-   **Tool curation**: global + per-API cardinality caps, declarative `ToolFilter` (allow/deny by path, method, tag, operationId), improved schema quality (`additionalProperties`, nullable, defaults, `oneOf`/`anyOf`/`allOf`)
 -   Stay on this preview line while building tool curation and further roadmap items (next free NuGet id after `0.0.14-preview`)
 
 ### v0.0.14-preview
@@ -73,8 +74,10 @@
 Install the package into your ASP.NET Core project:
 
 ```bash
-dotnet add package MCPify
+dotnet add package MCPify --version 0.0.15-preview
 ```
+
+> **Preview notice:** MCPify is on the `0.0.x-preview` line. Breaking changes may occur between preview releases. Pin an exact version (e.g. `0.0.15-preview`) rather than a floating range to avoid surprises. A `0.1.0-preview` soft-freeze is planned once tool curation and local-tool DX are feature-complete.
 
 ### 2. Configuration
 
@@ -536,6 +539,92 @@ MCPify's authentication has three distinct layers:
 2. **Inbound JWT Validation** — the host application's responsibility. Use standard ASP.NET Core `AddAuthentication().AddJwtBearer(...)` to validate tokens (expiration, audience, issuer). MCPify does not ship its own JWT validator.
 
 3. **Per-Tool Scope Enforcement** — MCPify's `ScopeRequirementHandler` evaluates `ScopeRequirement` metadata on each tool via `IAuthorizationService`. Requires `services.AddAuthorization()` to be registered.
+
+## Tool Curation
+
+Large OpenAPI specs can generate hundreds of operations — far too many for an agent to use effectively. MCPify provides built-in curation controls to expose a focused, agent-usable toolset.
+
+### Cardinality Caps
+
+Limit the total number of tools across all sources, or per API:
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    options.MaxTools = 50; // global cap (default: 100)
+
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://api.example.com",
+        OpenApiUrl = "https://api.example.com/swagger.json",
+        MaxTools = 10 // per-API cap (default: unlimited)
+    });
+
+    options.LocalEndpoints = new LocalEndpointsOptions
+    {
+        Enabled = true,
+        MaxTools = 15 // per-source cap
+    };
+});
+```
+
+When a cap is exceeded, remaining operations are skipped and a warning is logged.
+
+### Declarative Filters
+
+Use `ToolFilter` for config-friendly allow/deny rules without writing predicates:
+
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.example.com",
+    OpenApiUrl = "https://api.example.com/swagger.json",
+    ToolFilter = new ToolFilter
+    {
+        AllowPaths = { "/api/v1" },
+        DenyPaths = { "/api/v1/internal" },
+        AllowMethods = { "GET", "POST" },
+        AllowTags = { "pets", "store" },
+        DenyTags = { "admin" },
+        AllowOperationIds = { "get_", "create_" },
+        ExcludeDeprecated = true
+    }
+});
+```
+
+All matchers use case-insensitive prefix matching. An operation passes if it matches at least one allow rule (or no allow rules are set) and no deny rules.
+
+### Custom Predicate Filter
+
+For advanced filtering, use the `Filter` predicate directly:
+
+```csharp
+options.ExternalApis.Add(new ExternalApiOptions
+{
+    ApiBaseUrl = "https://api.example.com",
+    OpenApiUrl = "https://api.example.com/swagger.json",
+    Filter = op => !op.Route.Contains("/health") && op.Method == OperationType.Get
+});
+```
+
+Both `ToolFilter` and `Filter` can be used together — `ToolFilter` is applied first.
+
+### Curation Best Practices
+
+- **Prefer fewer, well-described tools.** Agents struggle with 200+ operations. Aim for 10–30 tools per MCP server.
+- **Use `ToolPrefix`** to namespace tools when importing multiple APIs (e.g. `petstore_`, `github_`).
+- **Exclude deprecated endpoints** with `ToolFilter.ExcludeDeprecated = true`.
+- **Filter by tag** to expose only coherent API groups (e.g. `AllowTags = { "pets" }`).
+- **Write good OpenAPI descriptions.** MCPify prefers `description` > `summary` > a structured fallback. The richer your spec, the better the agent understands each tool.
+
+### Why Tools-Only (Not Resources)?
+
+MCPify exposes all OpenAPI operations as **tools**, not MCP resources. This is a deliberate choice:
+
+- **Tools are action-oriented.** Most API operations involve parameters, auth, and side effects — a natural fit for MCP tools.
+- **GET endpoints with path parameters** *could* map to `ResourceTemplate`, but query parameters, headers, and content negotiation make the mapping lossy.
+- **Agent UX.** A single tool list is simpler for agents to reason about than a mixed resource/tool surface.
+- **Future.** Resource template mapping for pure GET-by-id endpoints is tracked for a later preview.
 
 ## Contributing
 
