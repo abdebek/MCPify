@@ -147,12 +147,16 @@ public static class McpifyServiceExtensions
         services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<McpAuthenticationOptions>, McpAuthenticationOptionsSetup>());
         services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureNamedOptions<McpAuthenticationOptions>, McpAuthenticationOptionsSetup>());
 
-        services.AddAuthentication(options =>
-            {
-                options.DefaultScheme = McpAuthenticationDefaults.AuthenticationScheme;
-                options.DefaultAuthenticateScheme = McpAuthenticationDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = McpAuthenticationDefaults.AuthenticationScheme;
-            })
+        // Register the MCP authentication scheme by name only. Do NOT mutate the host app's
+        // DefaultScheme / DefaultAuthenticateScheme / DefaultChallengeScheme — a library must
+        // not hijack the app's default auth. Host apps that want MCP as the default can set
+        // options.DefaultScheme = McpAuthenticationDefaults.AuthenticationScheme themselves.
+        //
+        // The "Bearer" alias is registered because the SDK's McpAuthenticationHandler
+        // internally forwards to a "Bearer" scheme for token validation. If the host already
+        // registered a "Bearer" scheme (e.g. via AddJwtBearer), AddScheme is a no-op for that
+        // name and the host's handler wins — which is the correct composition.
+        services.AddAuthentication()
             .AddScheme<McpAuthenticationOptions, McpAuthenticationHandler>(
                 McpAuthenticationDefaults.AuthenticationScheme,
                 _ => { })

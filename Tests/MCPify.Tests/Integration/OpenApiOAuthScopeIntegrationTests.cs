@@ -175,6 +175,14 @@ public class OpenApiOAuthScopeIntegrationTests
             configureOptions?.Invoke(options);
         });
 
+        // Opt in to MCP as the default auth scheme (host app's responsibility, not the library's).
+        builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o =>
+        {
+            o.DefaultScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+            o.DefaultAuthenticateScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+            o.DefaultChallengeScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+        });
+
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();

@@ -30,7 +30,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly Action<string>? _authorizationUrlEmitter;
     private readonly string _stateSecret;
     private readonly bool _allowDefaultSessionFallback;
-    private readonly ISessionMap? _sessionMap; // Optional dependency for Lazy Auth
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
     private const string _oauthProviderName = "OAuth";
     private const string _pkceStorePrefix = "pkce_";
@@ -50,7 +49,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         Action<string>? authorizationUrlEmitter = null,
         string? stateSecret = null,
         bool allowDefaultSessionFallback = false,
-        ISessionMap? sessionMap = null,
         string? resourceUrl = null)
     {
         _clientId = clientId;
@@ -67,7 +65,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _authorizationUrlEmitter = authorizationUrlEmitter;
         _stateSecret = stateSecret ?? "A_VERY_LONG_AND_SECURE_SECRET_KEY_FOR_HMAC_SIGNING";
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
-        _sessionMap = sessionMap;
         _resourceUrl = resourceUrl;
     }
 
@@ -158,9 +155,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         var nonce = oauthState.Nonce!;
         var redirectUri = oauthState.RedirectUri!;
 
-        // Default to using the handle as the storage key
-        var storageKey = sessionHandle;
-
         string? codeVerifier = null;
         if (_usePkce)
         {
@@ -172,30 +166,12 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
         var tokenData = await ExchangeCodeForTokenAsync(code, redirectUri, codeVerifier, cancellationToken);
 
-        // Session Upgrade Logic:
-        // If we have an ID Token, try to extract the user's stable identity (sub/email).
-        var idToken = ExtractIdToken(tokenData);
-        if (!string.IsNullOrEmpty(idToken))
-        {
-            var principalId = ExtractPrincipalFromIdToken(idToken);
-            if (!string.IsNullOrEmpty(principalId) && _sessionMap != null)
-            {
-                // Upgrade the session mapping: sessionHandle points to principalId
-                _sessionMap.UpgradeSession(sessionHandle, principalId);
-                // Future storage should use the principalId
-                storageKey = principalId;
-                // Update the current context to reflect the change immediately
-                _mcpContextAccessor.SessionId = principalId;
-            }
-        }
-        else
-        {
-            // Ensure context is set to the handle if no upgrade happened
-             _mcpContextAccessor.SessionId = sessionHandle;
-        }
-        
-        await _secureTokenStore.SaveTokenAsync(storageKey, _oauthProviderName, tokenData, cancellationToken);
-        if (_allowDefaultSessionFallback && !string.Equals(storageKey, Constants.DefaultSessionId, StringComparison.Ordinal))
+        // Always store under the session handle. We do not rekey on unvalidated id_token sub
+        // (the id_token signature is not validated here, so sub is not trusted as a storage key).
+        _mcpContextAccessor.SessionId = sessionHandle;
+        await _secureTokenStore.SaveTokenAsync(sessionHandle, _oauthProviderName, tokenData, cancellationToken);
+
+        if (_allowDefaultSessionFallback && !string.Equals(sessionHandle, Constants.DefaultSessionId, StringComparison.Ordinal))
         {
             await _secureTokenStore.SaveTokenAsync(Constants.DefaultSessionId, _oauthProviderName, tokenData, cancellationToken);
         }
@@ -213,19 +189,9 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         var keys = new List<string>();
         AddLookupKey(keys, sessionId);
 
-        if (_sessionMap != null)
-        {
-            AddLookupKey(keys, _sessionMap.ResolvePrincipal(sessionId));
-        }
-
         if (_allowDefaultSessionFallback)
         {
             AddLookupKey(keys, Constants.DefaultSessionId);
-
-            if (_sessionMap != null)
-            {
-                AddLookupKey(keys, _sessionMap.ResolvePrincipal(Constants.DefaultSessionId));
-            }
         }
 
         return keys;
@@ -247,29 +213,6 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private string? ExtractIdToken(TokenData tokenData)
     {
         return tokenData.IdToken;
-    }
-
-    private string? ExtractPrincipalFromIdToken(string idToken)
-    {
-        try
-        {
-            var parts = idToken.Split('.');
-            if (parts.Length < 2) return null;
-            
-            var payload = parts[1];
-            var jsonBytes = Base64UrlDecode(payload);
-            using var doc = JsonDocument.Parse(jsonBytes);
-            
-            if (doc.RootElement.TryGetProperty("sub", out var sub))
-            {
-                return sub.GetString();
-            }
-        }
-        catch 
-        { 
-            // Ignore parsing failures
-        }
-        return null;
     }
 
     private async Task<TokenData> ExchangeCodeForTokenAsync(string code, string redirectUri, string? codeVerifier, CancellationToken cancellationToken)

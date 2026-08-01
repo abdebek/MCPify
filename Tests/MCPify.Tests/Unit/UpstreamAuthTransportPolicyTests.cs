@@ -271,4 +271,30 @@ public class UpstreamAuthTransportPolicyTests
         var provider = options.LocalEndpoints!.UpstreamAuth!.Build(serviceProvider);
         Assert.IsType<McpContextTokenProvider>(provider);
     }
+
+    [Fact]
+    public void AddMcpify_DoesNotHijackHostDefaultAuthScheme()
+    {
+        var services = new ServiceCollection();
+
+        // Host registers its own default scheme BEFORE calling AddMcpify
+        services.AddAuthentication(options =>
+        {
+            options.DefaultScheme = "App";
+            options.DefaultAuthenticateScheme = "App";
+            options.DefaultChallengeScheme = "App";
+        }).AddCookie("App");
+
+        services.AddMcpify(options =>
+        {
+            options.Transport = McpTransportType.Http;
+        });
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var authOptions = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Authentication.AuthenticationOptions>>().Value;
+
+        Assert.Equal("App", authOptions.DefaultScheme);
+        Assert.Equal("App", authOptions.DefaultAuthenticateScheme);
+        Assert.Equal("App", authOptions.DefaultChallengeScheme);
+    }
 }

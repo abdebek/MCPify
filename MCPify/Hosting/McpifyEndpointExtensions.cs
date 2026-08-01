@@ -2,8 +2,10 @@ using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.TokenProviders;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using ModelContextProtocol.AspNetCore.Authentication;
 using ModelContextProtocol.Server;
 using MCPify.Endpoints;
 using MCPify.Tools;
@@ -116,7 +118,10 @@ public static class McpifyEndpointExtensions
             var mcpRoute = app.MapMcp(path);
             if (oauthStore?.GetConfigurations().Any() == true)
             {
-                mcpRoute.RequireAuthorization();
+                mcpRoute.RequireAuthorization(new AuthorizeAttribute
+                {
+                    AuthenticationSchemes = McpAuthenticationDefaults.AuthenticationScheme
+                });
             }
         }
 

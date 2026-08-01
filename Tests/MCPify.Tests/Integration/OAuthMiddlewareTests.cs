@@ -166,6 +166,16 @@ public class OAuthMiddlewareTests
             configureOptions?.Invoke(options);
         });
 
+        // These tests exercise the MCP auth scheme, so opt in to it as the default.
+        // Host apps would do the same only if MCP is their primary auth; otherwise they
+        // reference the scheme by name on the MCP route.
+        builder.Services.PostConfigure<Microsoft.AspNetCore.Authentication.AuthenticationOptions>(o =>
+        {
+            o.DefaultScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+            o.DefaultAuthenticateScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+            o.DefaultChallengeScheme = ModelContextProtocol.AspNetCore.Authentication.McpAuthenticationDefaults.AuthenticationScheme;
+        });
+
         var app = builder.Build();
         app.UseAuthentication();
         app.UseAuthorization();
