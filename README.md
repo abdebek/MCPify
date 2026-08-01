@@ -5,11 +5,19 @@
 
 **MCPify** is a .NET library that bridges the gap between your existing ASP.NET Core APIs (or external OpenAPI/Swagger specs) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It allows you to expose API operations as MCP tools that can be consumed by AI assistants like Claude Desktop, ensuring seamless integration with your existing services.
 
-> **Latest Release:** v0.0.14-preview - Extensible UpstreamAuth abstraction + RFC 8693 Token Exchange!
+> **Latest Release:** v0.0.15-preview - SDK 2.0, honesty/auth composition baseline, Playwright smokes (still preview)
 
 ## What's New
 
-### v0.0.14-preview (Latest)
+### v0.0.15-preview (Latest)
+-   **MCP SDK 2.0.0** with Streamable HTTP labeling and `AddAuthorizationFilters`
+-   **Auth honesty**: host JWT ownership, required `stateSecret`, PKCE default on, no unvalidated `sub` rekey, no default-scheme hijack
+-   **Single registration path**: `MapMcpifyEndpoint` registers local + external tools
+-   **SSRF guard**, scope fail-closed enforcement, TokenExchange error handling
+-   **Playwright** Sample smoke tests (OAuth + MCP HTTP)
+-   Stay on this preview line while building tool curation and further roadmap items (next free NuGet id after `0.0.14-preview`)
+
+### v0.0.14-preview
 -   **UpstreamAuth Abstraction**: Replaces the rigid `TokenSource` enum with an extensible class offering static factory methods: `PassThrough()`, `None()`, `ServerManaged()`, `TokenExchange()`, `Fallback()`, and `Custom()`
 -   **RFC 8693 Token Exchange**: New `UpstreamAuth.TokenExchange()` strategy exchanges the MCP client's access token for an upstream API token at a configured token endpoint
 -   **Composable Strategies**: `UpstreamAuth.Fallback()` chains multiple strategies; `UpstreamAuth.Custom()` provides an escape hatch for user-supplied `ITokenProvider` factories

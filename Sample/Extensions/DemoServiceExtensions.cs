@@ -18,13 +18,13 @@ namespace MCPify.Sample.Extensions;
 
 public static class DemoServiceExtensions
 {
-    public static IServiceCollection AddDemoDatabaseAndAuth(this IServiceCollection services, string baseUrl)
+    public static IServiceCollection AddDemoDatabaseAndAuth(this IServiceCollection services, string baseUrl, string? dbName = null)
     {
         var normalizedBaseUrl = baseUrl.TrimEnd('/');
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
-            options.UseInMemoryDatabase("db");
+            options.UseInMemoryDatabase(dbName ?? "db");
             options.UseOpenIddict();
         });
 

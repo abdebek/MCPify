@@ -61,3 +61,5 @@ app.MapDemoEndpoints(oauthRedirectPath);
 app.MapMcpifyEndpoint("/mcp");
 
 app.Run();
+
+public partial class Program { }

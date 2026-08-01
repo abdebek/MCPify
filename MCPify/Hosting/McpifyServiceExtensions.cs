@@ -63,6 +63,7 @@ public static class McpifyServiceExtensions
         services.AddSingleton<ISessionMap, InMemorySessionMap>();
 
         var serverBuilder = services.AddMcpServer();
+        serverBuilder.AddAuthorizationFilters();
         if (opts.Transport == McpTransportType.Stdio)
         {
             serverBuilder.WithStdioServerTransport();

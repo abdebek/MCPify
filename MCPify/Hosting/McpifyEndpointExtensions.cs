@@ -59,10 +59,11 @@ public static class McpifyEndpointExtensions
             var mcpRoute = app.MapMcp(path);
             if (oauthStore?.GetConfigurations().Any() == true)
             {
-                mcpRoute.RequireAuthorization(new AuthorizeAttribute
-                {
-                    AuthenticationSchemes = McpAuthenticationDefaults.AuthenticationScheme
-                });
+                // Use RequireAuthorization without pinning AuthenticationSchemes so the host's
+                // DefaultAuthenticateScheme (e.g. JwtBearer, OpenIddict) validates tokens, while
+                // the DefaultChallengeScheme (MCP handler) issues WWW-Authenticate challenges.
+                // Hosts that want MCP as the sole auth scheme can set it as DefaultAuthenticateScheme.
+                mcpRoute.RequireAuthorization();
             }
         }
 
