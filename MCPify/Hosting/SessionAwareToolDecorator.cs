@@ -1,17 +1,21 @@
 using System.Linq;
 using System.Text.Json;
 using MCPify.Core;
+using MCPify.Core.Auth;
 using MCPify.Core.Session;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
+using System.Security.Claims;
 
 namespace MCPify.Hosting;
 
 /// <summary>
 /// Decorates an McpServerTool to ensure a Session Context exists before execution.
 /// This is crucial for Stdio transport where ASP.NET Core middleware does not run.
+/// Also enforces per-tool <see cref="ScopeRequirement"/> metadata via <see cref="IAuthorizationService"/>.
 /// </summary>
 public class SessionAwareToolDecorator : McpServerTool
 {
@@ -90,6 +94,13 @@ public class SessionAwareToolDecorator : McpServerTool
             var authHeader = httpContextAccessor?.HttpContext?.Request?.Headers["Authorization"].FirstOrDefault();
             accessor.AccessToken = string.IsNullOrEmpty(authHeader) ? null : authHeader;
 
+            // Enforce per-tool ScopeRequirement metadata
+            var scopeError = await TryEnforceScopesAsync(services, httpContextAccessor, accessor, token);
+            if (scopeError != null)
+            {
+                return scopeError;
+            }
+
             return await _innerTool.InvokeAsync(context, token);
         }
         finally
@@ -99,4 +110,81 @@ public class SessionAwareToolDecorator : McpServerTool
             accessor.AccessToken = previousAccessToken;
         }
     }
+
+    /// <summary>
+    /// Evaluates <see cref="ScopeRequirement"/> objects from the inner tool's <see cref="McpServerTool.Metadata"/>
+    /// against the current principal. Returns an error result if authorization fails, or null to proceed.
+    /// </summary>
+    private async Task<CallToolResult?> TryEnforceScopesAsync(
+        IServiceProvider services,
+        IHttpContextAccessor? httpContextAccessor,
+        IMcpContextAccessor mcpContextAccessor,
+        CancellationToken token)
+    {
+        var scopeRequirements = _innerTool.Metadata.OfType<ScopeRequirement>().ToList();
+        if (scopeRequirements.Count == 0)
+        {
+            return null;
+        }
+
+        var principal = ResolvePrincipal(services, httpContextAccessor, mcpContextAccessor);
+        if (principal == null)
+        {
+            return ScopeError("Authentication required. No authenticated principal found.");
+        }
+
+        var authService = services.GetService<IAuthorizationService>();
+        if (authService == null)
+        {
+            return null;
+        }
+
+        var result = await authService.AuthorizeAsync(principal, null, scopeRequirements);
+        if (!result.Succeeded)
+        {
+            var failed = result.Failure?.FailedRequirements.OfType<ScopeRequirement>().FirstOrDefault();
+            var pattern = failed?.Pattern ?? "*";
+            return ScopeError($"Insufficient scope. Required scope pattern: '{pattern}'.");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the <see cref="ClaimsPrincipal"/> for scope evaluation.
+    /// For HTTP: uses <see cref="HttpContext.User"/> (populated by auth middleware).
+    /// For Stdio: parses the JWT access token from <see cref="IMcpContextAccessor.AccessToken"/>.
+    /// </summary>
+    private static ClaimsPrincipal? ResolvePrincipal(
+        IServiceProvider services,
+        IHttpContextAccessor? httpContextAccessor,
+        IMcpContextAccessor mcpContextAccessor)
+    {
+        // HTTP path: the auth middleware has already populated HttpContext.User
+        var httpContext = httpContextAccessor?.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated == true)
+        {
+            return httpContext.User;
+        }
+
+        // Stdio path: try to build a principal from the access token in the MCP context
+        var accessToken = mcpContextAccessor.AccessToken;
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            return null;
+        }
+
+        // Strip "Bearer " prefix if present
+        var token = accessToken.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            ? accessToken["Bearer ".Length..]
+            : accessToken;
+
+        return JwtClaimsPrincipalBuilder.BuildFromJwt(token);
+    }
+
+    private static CallToolResult ScopeError(string message) => new()
+    {
+        IsError = true,
+        Content = new[] { new TextContentBlock { Text = $"Forbidden: {message}" } }
+    };
 }

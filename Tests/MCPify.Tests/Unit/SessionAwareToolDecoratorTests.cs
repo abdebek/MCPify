@@ -1,9 +1,12 @@
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Security.Claims;
 using System.Text.Json;
 using MCPify.Core;
+using MCPify.Core.Auth;
 using MCPify.Hosting;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -67,6 +70,80 @@ public class SessionAwareToolDecoratorTests
         Assert.Equal("bridged-session|(null)", ReadText(result));
     }
 
+    [Fact]
+    public async Task InvokeAsync_EnforcesScopeRequirement_WhenScopePresent()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();
+        var accessor = new McpContextAccessor();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+
+        var provider = services.BuildServiceProvider();
+        var innerTool = new ScopeProtectedTool(new[] { new ScopeRequirement("api.read") });
+        var decorator = new SessionAwareToolDecorator(innerTool, provider);
+
+        // Build a principal with the required scope
+        var httpContextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+        httpContextAccessor.HttpContext!.User = new ClaimsPrincipal(
+            new ClaimsIdentity(new[] { new Claim("scope", "api.read api.write") }, "test"));
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "session-1"), CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+        Assert.Equal("ok", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_RejectsScopeRequirement_WhenScopeMissing()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();
+        var accessor = new McpContextAccessor();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+
+        var provider = services.BuildServiceProvider();
+        var innerTool = new ScopeProtectedTool(new[] { new ScopeRequirement("api.admin") });
+        var decorator = new SessionAwareToolDecorator(innerTool, provider);
+
+        // Principal has only api.read — api.admin is missing
+        var httpContextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+        httpContextAccessor.HttpContext!.User = new ClaimsPrincipal(
+            new ClaimsIdentity(new[] { new Claim("scope", "api.read") }, "test"));
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "session-1"), CancellationToken.None);
+
+        Assert.True(result.IsError == true);
+        Assert.Contains("Insufficient scope", ReadText(result));
+        Assert.Contains("api.admin", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AllowsTool_WhenNoScopeRequirements()
+    {
+        var services = new ServiceCollection();
+        services.AddAuthorization();
+        services.AddSingleton<IAuthorizationHandler, ScopeRequirementHandler>();
+        var accessor = new McpContextAccessor();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+
+        var provider = services.BuildServiceProvider();
+        var innerTool = new ScopeProtectedTool(Array.Empty<ScopeRequirement>());
+        var decorator = new SessionAwareToolDecorator(innerTool, provider);
+
+        // No principal, no scopes — but tool has no requirements, so it should pass
+        var result = await decorator.InvokeAsync(CreateContext(provider, "session-1"), CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+        Assert.Equal("ok", ReadText(result));
+    }
+
     private static string ReadText(CallToolResult result)
     {
         var block = Assert.IsType<TextContentBlock>(Assert.Single(result.Content));
@@ -121,6 +198,33 @@ public class SessionAwareToolDecoratorTests
             return new ValueTask<CallToolResult>(new CallToolResult
             {
                 Content = new[] { new TextContentBlock { Text = $"{session}|{accessToken}" } }
+            });
+        }
+    }
+
+    private sealed class ScopeProtectedTool : McpServerTool
+    {
+        private readonly IReadOnlyList<object> _metadata;
+
+        public ScopeProtectedTool(IEnumerable<ScopeRequirement> requirements)
+        {
+            _metadata = requirements.Cast<object>().ToList();
+        }
+
+        public override Tool ProtocolTool => new()
+        {
+            Name = "scope_protected",
+            Description = "A tool protected by scope requirements.",
+            InputSchema = JsonSerializer.SerializeToElement(new { type = "object" })
+        };
+
+        public override IReadOnlyList<object> Metadata => _metadata;
+
+        public override ValueTask<CallToolResult> InvokeAsync(RequestContext<CallToolRequestParams> context, CancellationToken token)
+        {
+            return new ValueTask<CallToolResult>(new CallToolResult
+            {
+                Content = new[] { new TextContentBlock { Text = "ok" } }
             });
         }
     }
