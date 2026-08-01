@@ -3,6 +3,7 @@ using Microsoft.OpenApi.Exceptions;
 using Microsoft.OpenApi.Readers;
 using Microsoft.OpenApi.Readers.Exceptions;
 using MCPify.Core;
+using System.Net;
 using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 
@@ -11,10 +12,14 @@ namespace MCPify.OpenApi;
 public class OpenApiV3Provider : IOpenApiProvider
 {
     private readonly TimeSpan _timeout;
+    private readonly SsrfGuard _ssrfGuard;
+    private readonly IHttpClientFactory? _httpClientFactory;
 
-    public OpenApiV3Provider(TimeSpan? timeout = null)
+    public OpenApiV3Provider(TimeSpan? timeout = null, SsrfGuard? ssrfGuard = null, IHttpClientFactory? httpClientFactory = null)
     {
         _timeout = timeout ?? TimeSpan.FromSeconds(30);
+        _ssrfGuard = ssrfGuard ?? new SsrfGuard();
+        _httpClientFactory = httpClientFactory;
     }
 
     public async Task<OpenApiDocument> LoadAsync(string source)
@@ -46,11 +51,98 @@ public class OpenApiV3Provider : IOpenApiProvider
     {
         if (Uri.IsWellFormedUriString(source, UriKind.Absolute))
         {
-            using var httpClient = new HttpClient { Timeout = _timeout };
-            return await httpClient.GetStringAsync(source);
+            ValidateUri(source);
+            var httpClient = _httpClientFactory?.CreateClient() ?? new HttpClient { Timeout = _timeout };
+            var disposeClient = _httpClientFactory == null;
+            try
+            {
+                return await httpClient.GetStringAsync(source);
+            }
+            finally
+            {
+                if (disposeClient) httpClient.Dispose();
+            }
         }
 
         return await File.ReadAllTextAsync(source);
+    }
+
+    private void ValidateUri(string source)
+    {
+        if (_ssrfGuard.DisableSsrfChecks) return;
+
+        var uri = new Uri(source);
+
+        if (uri.Scheme != "http" && uri.Scheme != "https")
+        {
+            throw new InvalidOperationException($"Only http and https schemes are allowed for OpenAPI URLs. Got: {uri.Scheme}");
+        }
+
+        var host = uri.Host;
+
+        if (_ssrfGuard.BlockedHosts.Contains(host))
+        {
+            throw new InvalidOperationException($"Host '{host}' is blocked by SSRF guard (cloud metadata or explicitly blocked).");
+        }
+
+        if (!_ssrfGuard.AllowPrivateAddresses && IsPrivateOrLoopbackAddress(host))
+        {
+            throw new InvalidOperationException(
+                $"Host '{host}' resolves to a private/loopback address. " +
+                "Set McpifyOptions.SsrfGuard.AllowPrivateAddresses = true to allow internal addresses.");
+        }
+    }
+
+    private static bool IsPrivateOrLoopbackAddress(string host)
+    {
+        if (IPAddress.TryParse(host, out var ip))
+        {
+            return IsPrivateIPAddress(ip);
+        }
+
+        try
+        {
+            var hostEntry = Dns.GetHostEntry(host);
+            foreach (var address in hostEntry.AddressList)
+            {
+                if (IsPrivateIPAddress(address))
+                {
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // DNS resolution failed — be conservative and block
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsPrivateIPAddress(IPAddress ip)
+    {
+        if (IPAddress.IsLoopback(ip)) return true;
+
+        // IPv6 site-local / link-local
+        if (ip.IsIPv6LinkLocal) return true;
+        if (ip.IsIPv6SiteLocal) return true;
+
+        // IPv4 private ranges (RFC1918) + link-local (169.254.0.0/16)
+        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = ip.GetAddressBytes();
+            // 10.0.0.0/8
+            if (bytes[0] == 10) return true;
+            // 172.16.0.0/12 (172.16.x.x – 172.31.x.x)
+            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
+            // 192.168.0.0/16
+            if (bytes[0] == 192 && bytes[1] == 168) return true;
+            // 169.254.0.0/16 link-local
+            if (bytes[0] == 169 && bytes[1] == 254) return true;
+        }
+
+        return false;
     }
 
     private OpenApiDocument ParseWithFallback(string content)

@@ -53,6 +53,14 @@ public class McpifyOptions
     public TimeSpan OpenApiDownloadTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Controls whether remote OpenAPI URLs are allowed and which addresses are blocked.
+    /// Defaults to blocking loopback, link-local, and RFC1918 private ranges to prevent SSRF.
+    /// Set <see cref="SsrfGuard.AllowPrivateAddresses"/> to true to allow internal addresses
+    /// (e.g. for self-hosted APIs behind a proxy).
+    /// </summary>
+    public SsrfGuard SsrfGuard { get; set; } = new();
+
+    /// <summary>
     /// The transport mechanism to use for the MCP server. Defaults to HTTP.
     /// </summary>
     public McpTransportType Transport { get; set; } = McpTransportType.Http;
@@ -250,4 +258,34 @@ public class ExternalApiOptions
     /// </summary>
     [Obsolete("Use UpstreamAuth instead.")]
     public TokenSource TokenSource { get; set; } = TokenSource.Server;
+}
+
+/// <summary>
+/// Controls SSRF protection for remote OpenAPI URL fetching.
+/// </summary>
+public class SsrfGuard
+{
+    /// <summary>
+    /// When true, allows fetching from loopback, link-local, and RFC1918 private addresses.
+    /// Default is false (block private addresses). Enable for self-hosted APIs behind a proxy
+    /// where the OpenAPI URL points to an internal service.
+    /// </summary>
+    public bool AllowPrivateAddresses { get; set; }
+
+    /// <summary>
+    /// When true, disables all SSRF checks. Only use in fully trusted environments.
+    /// </summary>
+    public bool DisableSsrfChecks { get; set; }
+
+    /// <summary>
+    /// Additional hostnames or IP ranges to block (e.g. metadata endpoints).
+    /// Entries are matched case-insensitively against the resolved host.
+    /// Defaults to blocking cloud metadata endpoints.
+    /// </summary>
+    public HashSet<string> BlockedHosts { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "169.254.169.254", // AWS/GCP/Azure metadata
+        "metadata.google.internal",
+        "metadata.azure.com",
+    };
 }

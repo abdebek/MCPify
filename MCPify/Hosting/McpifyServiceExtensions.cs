@@ -92,8 +92,8 @@ public static class McpifyServiceExtensions
                 options.ToolCollection = sharedCollection;
             });
 
-        services.AddSingleton<IOpenApiProvider>(_ =>
-            opts.ProviderOverride ?? new OpenApiV3Provider(opts.OpenApiDownloadTimeout));
+        services.AddSingleton<IOpenApiProvider>(sp =>
+            opts.ProviderOverride ?? new OpenApiV3Provider(opts.OpenApiDownloadTimeout, opts.SsrfGuard, sp.GetService<IHttpClientFactory>()));
 
         services.AddSingleton<IJsonSchemaGenerator>(_ =>
             opts.SchemaGeneratorOverride ?? new DefaultJsonSchemaGenerator());
