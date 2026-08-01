@@ -16,7 +16,7 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
     private readonly HttpClient _httpClient;
     private readonly Func<string, string, Task> _userPrompt;
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
-    private const string _deviceCodeProviderName = "DeviceCode";
+    private readonly string _providerName;
 
     public DeviceCodeAuthentication(
         string clientId,
@@ -27,7 +27,8 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         IMcpContextAccessor mcpContextAccessor,
         Func<string, string, Task> userPrompt,
         HttpClient? httpClient = null,
-        string? resourceUrl = null)
+        string? resourceUrl = null,
+        string? providerName = null)
     {
         _clientId = clientId;
         _deviceCodeEndpoint = deviceCodeEndpoint;
@@ -38,6 +39,7 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         _userPrompt = userPrompt;
         _httpClient = httpClient ?? HttpClientFallback.Create(nameof(DeviceCodeAuthentication));
         _resourceUrl = resourceUrl;
+        _providerName = providerName ?? "DeviceCode";
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
@@ -45,7 +47,7 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         var sessionId = _mcpContextAccessor.SessionId
             ?? throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
 
-        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _deviceCodeProviderName, cancellationToken);
+        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _providerName, cancellationToken);
 
         if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
         {
@@ -58,19 +60,19 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
             try
             {
                 tokenData = await RefreshTokenAsync(tokenData.RefreshToken, cancellationToken);
-                await _secureTokenStore.SaveTokenAsync(sessionId, _deviceCodeProviderName, tokenData, cancellationToken);
+                await _secureTokenStore.SaveTokenAsync(sessionId, _providerName, tokenData, cancellationToken);
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                 return;
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Token refresh failed for session {sessionId} (Device Code): {ex.Message}");
-                await _secureTokenStore.DeleteTokenAsync(sessionId, _deviceCodeProviderName, cancellationToken);
+                await _secureTokenStore.DeleteTokenAsync(sessionId, _providerName, cancellationToken);
             }
         }
 
         tokenData = await PerformDeviceLoginAsync(cancellationToken);
-        await _secureTokenStore.SaveTokenAsync(sessionId, _deviceCodeProviderName, tokenData, cancellationToken);
+        await _secureTokenStore.SaveTokenAsync(sessionId, _providerName, tokenData, cancellationToken);
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
     }
 

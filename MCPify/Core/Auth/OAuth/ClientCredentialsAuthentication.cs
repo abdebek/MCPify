@@ -15,7 +15,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
     private readonly IMcpContextAccessor _mcpContextAccessor;
     private readonly HttpClient _httpClient;
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
-    private const string _clientCredentialsProviderName = "ClientCredentials";
+    private readonly string _providerName;
 
     public ClientCredentialsAuthentication(
         string clientId,
@@ -25,7 +25,8 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         ISecureTokenStore secureTokenStore,
         IMcpContextAccessor mcpContextAccessor,
         HttpClient? httpClient = null,
-        string? resourceUrl = null)
+        string? resourceUrl = null,
+        string? providerName = null)
     {
         _clientId = clientId;
         _clientSecret = clientSecret;
@@ -35,6 +36,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         _mcpContextAccessor = mcpContextAccessor;
         _httpClient = httpClient ?? HttpClientFallback.Create(nameof(ClientCredentialsAuthentication));
         _resourceUrl = resourceUrl;
+        _providerName = providerName ?? "ClientCredentials";
     }
 
     public async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
@@ -42,7 +44,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         var sessionId = _mcpContextAccessor.SessionId
             ?? throw new InvalidOperationException("SessionId not set in MCP context. Cannot apply authentication.");
 
-        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _clientCredentialsProviderName, cancellationToken);
+        var tokenData = await _secureTokenStore.GetTokenAsync(sessionId, _providerName, cancellationToken);
 
         if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
         {
@@ -51,7 +53,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         }
 
         tokenData = await RequestTokenAsync(cancellationToken);
-        await _secureTokenStore.SaveTokenAsync(sessionId, _clientCredentialsProviderName, tokenData, cancellationToken);
+        await _secureTokenStore.SaveTokenAsync(sessionId, _providerName, tokenData, cancellationToken);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
     }
 

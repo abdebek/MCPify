@@ -31,7 +31,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
     private readonly string _stateSecret;
     private readonly bool _allowDefaultSessionFallback;
     private readonly string? _resourceUrl; // RFC 8707 resource parameter
-    private const string _oauthProviderName = "OAuth";
+    private readonly string _providerName;
     private const string _pkceStorePrefix = "pkce_";
 
     public OAuthAuthorizationCodeAuthentication(
@@ -49,7 +49,8 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         Action<string>? authorizationUrlEmitter = null,
         string? stateSecret = null,
         bool allowDefaultSessionFallback = false,
-        string? resourceUrl = null)
+        string? resourceUrl = null,
+        string? providerName = null)
     {
         _clientId = clientId;
         _authorizationEndpoint = authorizationEndpoint;
@@ -74,6 +75,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _stateSecret = resolvedStateSecret;
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
         _resourceUrl = resourceUrl;
+        _providerName = providerName ?? "OAuth";
     }
 
     public virtual string BuildAuthorizationUrl(string sessionId)
@@ -120,13 +122,13 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
         foreach (var lookupKey in ResolveTokenLookupKeys(sessionId))
         {
-            var tokenData = await _secureTokenStore.GetTokenAsync(lookupKey, _oauthProviderName, cancellationToken);
+            var tokenData = await _secureTokenStore.GetTokenAsync(lookupKey, _providerName, cancellationToken);
 
             if (tokenData != null && (!tokenData.ExpiresAt.HasValue || tokenData.ExpiresAt.Value > DateTimeOffset.UtcNow.AddMinutes(1)))
             {
                 if (!string.Equals(lookupKey, sessionId, StringComparison.Ordinal))
                 {
-                    await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+                    await _secureTokenStore.SaveTokenAsync(sessionId, _providerName, tokenData, cancellationToken);
                 }
 
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
@@ -138,17 +140,17 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
                 try
                 {
                     tokenData = await RefreshTokenAsync(tokenData.RefreshToken, lookupKey, cancellationToken);
-                    await _secureTokenStore.SaveTokenAsync(lookupKey, _oauthProviderName, tokenData, cancellationToken);
+                    await _secureTokenStore.SaveTokenAsync(lookupKey, _providerName, tokenData, cancellationToken);
                     if (!string.Equals(lookupKey, sessionId, StringComparison.Ordinal))
                     {
-                        await _secureTokenStore.SaveTokenAsync(sessionId, _oauthProviderName, tokenData, cancellationToken);
+                        await _secureTokenStore.SaveTokenAsync(sessionId, _providerName, tokenData, cancellationToken);
                     }
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData.AccessToken);
                     return;
                 }
                 catch (Exception)
                 {
-                    await _secureTokenStore.DeleteTokenAsync(lookupKey, _oauthProviderName, cancellationToken);
+                    await _secureTokenStore.DeleteTokenAsync(lookupKey, _providerName, cancellationToken);
                 }
             }
         }
@@ -177,11 +179,11 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         // Always store under the session handle. We do not rekey on unvalidated id_token sub
         // (the id_token signature is not validated here, so sub is not trusted as a storage key).
         _mcpContextAccessor.SessionId = sessionHandle;
-        await _secureTokenStore.SaveTokenAsync(sessionHandle, _oauthProviderName, tokenData, cancellationToken);
+        await _secureTokenStore.SaveTokenAsync(sessionHandle, _providerName, tokenData, cancellationToken);
 
         if (_allowDefaultSessionFallback && !string.Equals(sessionHandle, Constants.DefaultSessionId, StringComparison.Ordinal))
         {
-            await _secureTokenStore.SaveTokenAsync(Constants.DefaultSessionId, _oauthProviderName, tokenData, cancellationToken);
+            await _secureTokenStore.SaveTokenAsync(Constants.DefaultSessionId, _providerName, tokenData, cancellationToken);
         }
 
         if (_usePkce)
@@ -332,7 +334,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
             Nonce = nonce,
             SessionId = sessionId,
             RedirectUri = redirectUri,
-            ProviderName = _oauthProviderName
+            ProviderName = _providerName
         };
 
         var jsonState = JsonSerializer.Serialize(oauthState);
