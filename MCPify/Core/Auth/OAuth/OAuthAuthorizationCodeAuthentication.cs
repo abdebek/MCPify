@@ -45,7 +45,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         HttpClient? httpClient = null,
         string? redirectUri = null,
         Action<string>? openBrowserAction = null,
-        bool usePkce = false,
+        bool usePkce = true,
         Action<string>? authorizationUrlEmitter = null,
         string? stateSecret = null,
         bool allowDefaultSessionFallback = false,
