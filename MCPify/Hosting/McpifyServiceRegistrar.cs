@@ -121,16 +121,25 @@ public class McpifyServiceRegistrar
 
                 var operations = _openApiProvider.GetOperations(document);
 
-                if (apiOptions.Filter != null)
-                {
-                    operations = operations.Where(apiOptions.Filter);
-                }
+                operations = ApplyToolFilter(operations, apiOptions.ToolFilter, apiOptions.Filter);
 
+                var perApiLimit = apiOptions.MaxTools > 0 ? apiOptions.MaxTools : int.MaxValue;
                 var httpClient = _httpClientFactory.CreateClient();
 
                 var count = 0;
                 foreach (var operation in operations)
                 {
+                    if (count >= perApiLimit)
+                    {
+                        _logger.LogWarning("[MCPify] Per-API tool limit ({Limit}) reached for {Source}; skipping remaining operations.", perApiLimit, source);
+                        break;
+                    }
+
+                    if (toolCollection.Count >= _options.MaxTools)
+                    {
+                        _logger.LogWarning("[MCPify] Global tool limit ({Limit}) reached; skipping remaining operations from {Source}.", _options.MaxTools, source);
+                        break;
+                    }
                     var toolName = string.IsNullOrEmpty(apiOptions.ToolPrefix)
                         ? operation.Name
                         : apiOptions.ToolPrefix + operation.Name;
@@ -185,11 +194,9 @@ public class McpifyServiceRegistrar
 
         var operations = endpointProvider.GetLocalEndpoints(endpointDataSources);
 
-        if (_options.LocalEndpoints!.Filter != null)
-        {
-            operations = operations.Where(_options.LocalEndpoints.Filter);
-        }
+        operations = ApplyToolFilter(operations, _options.LocalEndpoints!.ToolFilter, _options.LocalEndpoints.Filter);
 
+        var perApiLimit = _options.LocalEndpoints.MaxTools > 0 ? _options.LocalEndpoints.MaxTools : int.MaxValue;
         var httpClient = _httpClientFactory.CreateClient();
 
         string BaseUrlProvider()
@@ -204,6 +211,17 @@ public class McpifyServiceRegistrar
         var count = 0;
         foreach (var operation in operations)
         {
+            if (count >= perApiLimit)
+            {
+                _logger.LogWarning("[MCPify] Local endpoint tool limit ({Limit}) reached; skipping remaining.", perApiLimit);
+                break;
+            }
+
+            if (toolCollection.Count >= _options.MaxTools)
+            {
+                _logger.LogWarning("[MCPify] Global tool limit ({Limit}) reached; skipping remaining local endpoints.", _options.MaxTools);
+                break;
+            }
             var toolName = string.IsNullOrEmpty(_options.LocalEndpoints.ToolPrefix)
                 ? operation.Name
                 : _options.LocalEndpoints.ToolPrefix + operation.Name;
@@ -232,5 +250,19 @@ public class McpifyServiceRegistrar
         }
 
         _logger.LogInformation("[MCPify] Successfully registered {Count} local endpoint tools.", count);
+    }
+
+    private static IEnumerable<OpenApiOperationDescriptor> ApplyToolFilter(
+        IEnumerable<OpenApiOperationDescriptor> operations,
+        ToolFilter? toolFilter,
+        Func<OpenApiOperationDescriptor, bool>? predicate)
+    {
+        if (toolFilter != null)
+            operations = operations.Where(toolFilter.Matches);
+
+        if (predicate != null)
+            operations = operations.Where(predicate);
+
+        return operations;
     }
 }

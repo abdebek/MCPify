@@ -53,9 +53,25 @@ public class OpenApiProxyTool : McpServerTool
     public override Tool ProtocolTool => new()
     {
         Name = _descriptor.Name,
-        Description = _descriptor.Operation.Summary ?? $"Invoke {_descriptor.Method} {_descriptor.Route}",
+        Description = BuildDescription(),
         InputSchema = BuildInputSchema()
     };
+
+    private string BuildDescription()
+    {
+        var op = _descriptor.Operation;
+        var desc = !string.IsNullOrWhiteSpace(op.Description) ? op.Description
+            : !string.IsNullOrWhiteSpace(op.Summary) ? op.Summary
+            : null;
+
+        if (desc != null) return desc;
+
+        var method = _descriptor.Method.ToString().ToUpperInvariant();
+        var tags = op.Tags?.Select(t => t.Name).ToList();
+        return tags is { Count: > 0 }
+            ? $"{method} {_descriptor.Route} — {string.Join(", ", tags)}"
+            : $"{method} {_descriptor.Route}";
+    }
 
     public override IReadOnlyList<object> Metadata => _metadata ??= BuildMetadata();
 

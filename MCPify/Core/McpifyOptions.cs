@@ -28,6 +28,12 @@ public class McpifyOptions
     public string? ResourceUrlOverride { get; set; }
 
     /// <summary>
+    /// Maximum total number of tools that can be registered. Defaults to 100.
+    /// When exceeded, remaining operations are skipped and a warning is logged.
+    /// </summary>
+    public int MaxTools { get; set; } = 100;
+
+    /// <summary>
     /// Configuration for importing external APIs via OpenAPI/Swagger as MCP tools.
     /// </summary>
     public List<ExternalApiOptions> ExternalApis { get; set; } = new();
@@ -176,6 +182,17 @@ public class LocalEndpointsOptions
     public string? BaseUrlOverride { get; set; }
 
     /// <summary>
+    /// Maximum number of local-endpoint tools to register. Defaults to no limit (0).
+    /// </summary>
+    public int MaxTools { get; set; }
+
+    /// <summary>
+    /// Declarative allow/deny rules for filtering operations by path, method, tag, or operationId.
+    /// Applied in addition to <see cref="Filter"/> if both are set.
+    /// </summary>
+    public ToolFilter? ToolFilter { get; set; }
+
+    /// <summary>
     /// A filter predicate to include/exclude specific operations based on their descriptor.
     /// </summary>
     public Func<OpenApiOperationDescriptor, bool>? Filter { get; set; }
@@ -229,6 +246,18 @@ public class ExternalApiOptions
     /// An optional prefix to prepend to the names of generated tools for this API.
     /// </summary>
     public string? ToolPrefix { get; set; }
+
+    /// <summary>
+    /// Maximum number of tools to register from this API. Defaults to no limit (0).
+    /// When exceeded, remaining operations are skipped and a warning is logged.
+    /// </summary>
+    public int MaxTools { get; set; }
+
+    /// <summary>
+    /// Declarative allow/deny rules for filtering operations by path, method, tag, or operationId.
+    /// Applied in addition to <see cref="Filter"/> if both are set.
+    /// </summary>
+    public ToolFilter? ToolFilter { get; set; }
 
     /// <summary>
     /// A filter predicate to include/exclude specific operations based on their descriptor.
@@ -288,4 +317,87 @@ public class SsrfGuard
         "metadata.google.internal",
         "metadata.azure.com",
     };
+}
+
+/// <summary>
+/// Declarative operation filter with allow/deny lists by path, method, tag, and operationId.
+/// All matchers use case-insensitive prefix matching. An operation passes if:
+/// - it matches at least one allow rule (or no allow rules are set), AND
+/// - it matches no deny rules.
+/// </summary>
+public class ToolFilter
+{
+    /// <summary>
+    /// If non-empty, only operations whose path starts with one of these prefixes are included.
+    /// </summary>
+    public HashSet<string> AllowPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Operations whose path starts with one of these prefixes are excluded.
+    /// </summary>
+    public HashSet<string> DenyPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// If non-empty, only operations with these HTTP methods are included.
+    /// Values: GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS, TRACE.
+    /// </summary>
+    public HashSet<string> AllowMethods { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Operations with these HTTP methods are excluded.
+    /// </summary>
+    public HashSet<string> DenyMethods { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// If non-empty, only operations tagged with at least one of these tags are included.
+    /// </summary>
+    public HashSet<string> AllowTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Operations tagged with any of these tags are excluded.
+    /// </summary>
+    public HashSet<string> DenyTags { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// If non-empty, only operations whose operationId starts with one of these prefixes are included.
+    /// </summary>
+    public HashSet<string> AllowOperationIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Operations whose operationId starts with one of these prefixes are excluded.
+    /// </summary>
+    public HashSet<string> DenyOperationIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// When true, operations with <c>Deprecated</c> flag are excluded.
+    /// </summary>
+    public bool ExcludeDeprecated { get; set; }
+
+    public bool Matches(OpenApiOperationDescriptor descriptor)
+    {
+        if (ExcludeDeprecated && descriptor.Operation.Deprecated) return false;
+
+        if (DenyPaths.Count > 0 && MatchesAnyPrefix(descriptor.Route, DenyPaths)) return false;
+        if (DenyMethods.Count > 0 && DenyMethods.Contains(descriptor.Method.ToString())) return false;
+        if (DenyOperationIds.Count > 0 && MatchesAnyPrefix(descriptor.Name, DenyOperationIds)) return false;
+
+        var tags = descriptor.Operation.Tags?.Select(t => t.Name).ToList() ?? new();
+        if (DenyTags.Count > 0 && tags.Any(t => DenyTags.Contains(t))) return false;
+
+        if (AllowPaths.Count > 0 && !MatchesAnyPrefix(descriptor.Route, AllowPaths)) return false;
+        if (AllowMethods.Count > 0 && !AllowMethods.Contains(descriptor.Method.ToString())) return false;
+        if (AllowOperationIds.Count > 0 && !MatchesAnyPrefix(descriptor.Name, AllowOperationIds)) return false;
+        if (AllowTags.Count > 0 && !tags.Any(t => AllowTags.Contains(t))) return false;
+
+        return true;
+    }
+
+    private static bool MatchesAnyPrefix(string value, HashSet<string> prefixes)
+    {
+        foreach (var prefix in prefixes)
+        {
+            if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 }
