@@ -125,7 +125,7 @@ public enum TokenSource
 public enum McpTransportType
 {
     /// <summary>
-    /// Uses Server-Sent Events (SSE) and HTTP POST for communication. Best for remote servers.
+    /// Uses Streamable HTTP for communication. Best for remote servers.
     /// </summary>
     Http,
     /// <summary>

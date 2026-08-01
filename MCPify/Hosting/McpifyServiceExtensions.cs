@@ -128,9 +128,12 @@ public static class McpifyServiceExtensions
         // Register ISecureTokenStore
         services.AddSingleton<ISecureTokenStore>(sp =>
         {
-            var env = sp.GetRequiredService<IWebHostEnvironment>();
-            var basePath = Path.Combine(env.ContentRootPath, "AuthTokens");
-            // Ensure the directory exists
+            // Try IWebHostEnvironment first (web hosts), fall back to AppContext.BaseDirectory
+            // (console/generic hosts) so MCPify works without Microsoft.NET.Sdk.Web.
+            var env = sp.GetService<IWebHostEnvironment>();
+            var basePath = env != null
+                ? Path.Combine(env.ContentRootPath, "AuthTokens")
+                : Path.Combine(AppContext.BaseDirectory, "AuthTokens");
             if (!Directory.Exists(basePath))
             {
                 Directory.CreateDirectory(basePath);

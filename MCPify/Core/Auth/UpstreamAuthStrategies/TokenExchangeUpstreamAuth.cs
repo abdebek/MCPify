@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 using MCPify.Core.Auth.TokenExchange;
 using MCPify.Core.Auth.TokenProviders;
 

@@ -45,11 +45,9 @@ internal sealed class McpAuthenticationOptionsSetup : IConfigureNamedOptions<Mcp
             return null;
         }
 
-        var resourceUri = ResolveResourceUri(options?.ResourceUrlOverride, httpContext);
-
         var metadata = new ProtectedResourceMetadata
         {
-            Resource = resourceUri,
+            Resource = ResolveResourceString(options?.ResourceUrlOverride, httpContext),
         };
 
         if (oauthStore != null)
@@ -60,14 +58,14 @@ internal sealed class McpAuthenticationOptionsSetup : IConfigureNamedOptions<Mcp
         return metadata;
     }
 
-    private static Uri? ResolveResourceUri(string? overrideUrl, HttpContext httpContext)
+    private static string ResolveResourceString(string? overrideUrl, HttpContext httpContext)
     {
-        if (!string.IsNullOrWhiteSpace(overrideUrl) && Uri.TryCreate(overrideUrl, UriKind.Absolute, out var overrideUri))
+        if (!string.IsNullOrWhiteSpace(overrideUrl))
         {
-            return overrideUri;
+            return overrideUrl.TrimEnd('/');
         }
 
-        return new Uri($"{httpContext.Request.Scheme}://{httpContext.Request.Host}");
+        return $"{httpContext.Request.Scheme}://{httpContext.Request.Host}";
     }
 
     private static void PopulateAuthorizationMetadata(ProtectedResourceMetadata metadata, OAuthConfigurationStore store)
@@ -101,9 +99,7 @@ internal sealed class McpAuthenticationOptionsSetup : IConfigureNamedOptions<Mcp
             }
         }
 
-        metadata.AuthorizationServers = authorizationServers
-            .Select(server => new Uri(server))
-            .ToList();
+        metadata.AuthorizationServers = authorizationServers.ToList();
 
         metadata.ScopesSupported = scopes.Count > 0
             ? scopes.ToList()

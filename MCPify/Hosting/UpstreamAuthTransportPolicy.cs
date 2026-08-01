@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 using MCPify.Core;
 using MCPify.Core.Auth;
 using MCPify.Core.Auth.OAuth;

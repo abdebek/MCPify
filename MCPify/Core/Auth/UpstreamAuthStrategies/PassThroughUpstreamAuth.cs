@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+
 using MCPify.Core.Auth.TokenProviders;
 
 namespace MCPify.Core.Auth.UpstreamAuthStrategies;

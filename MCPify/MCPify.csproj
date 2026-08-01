@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
@@ -8,7 +8,7 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MCPify</PackageId>
-    <Version>0.0.14-preview</Version>
+    <Version>1.0.0-rc.1</Version>
     <Authors>Abdullah D.</Authors>
     <Description>Turn any ASP.NET Core API or OpenAPI spec into a Model Context Protocol (MCP) server. Seamlessly integrates with Claude Desktop and other MCP clients.</Description>
     <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
@@ -16,12 +16,11 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
-    <StaticWebAssetBasePath></StaticWebAssetBasePath>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <GenerateStaticWebAssets>false</GenerateStaticWebAssets>
-  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="MCPify.Tests" />
@@ -32,8 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol" Version="0.6.0-preview.1" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="0.6.0-preview.1" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
     <PackageReference Include="Microsoft.OpenApi.Readers" Version="*" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>

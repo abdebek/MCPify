@@ -1,7 +1,12 @@
+using Microsoft.Extensions.Logging;
+
+using Microsoft.Extensions.DependencyInjection;
+
 using MCPify.Core;
 using MCPify.Core.Auth;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
 using ModelContextProtocol.AspNetCore.Authentication;
 using ModelContextProtocol.Server;
 using System.Linq;
