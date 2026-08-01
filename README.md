@@ -32,9 +32,8 @@
 
 ### v0.0.12 (Jan 23, 2026)
 -   **Enhanced OAuth Middleware**: Improved OAuth authentication middleware with better error handling and token management (#17)
--   **JWT Token Validation**: Full support for JWT access token validation including expiration, audience, and scope verification (#15)
 -   **Per-Tool Scope Requirements**: Define granular scope requirements for specific tools using pattern matching (#15)
--   **Automatic Scope Discovery**: Scopes are automatically extracted from OpenAPI security schemes and enforced during validation (#15)
+-   **Automatic Scope Discovery**: Scopes are automatically extracted from OpenAPI security schemes (#15)
 -   **WWW-Authenticate Header**: Improved WWW-Authenticate header to include scope parameter per MCP spec
 -   **LoginBrowserBehavior**: Control browser launch behavior for OAuth login in headless environments
 -   **OAuth2Configuration List**: Support for multiple OAuth providers with AuthorizationServers exposure (#13)
@@ -47,12 +46,12 @@
     -   Includes a `login_auth_code_pkce` tool that handles the browser-based login flow automatically.
     -   Securely stores tokens per session using encrypted local storage.
     -   Automatically refreshes tokens when they expire.
--   **MCP Authorization Spec Compliant**: Full compliance with the [MCP Authorization Specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
+-   **MCP Authorization Spec Compliant**: Partial compliance with the [MCP Authorization Specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization).
     -   Protected Resource Metadata (`/.well-known/oauth-protected-resource`)
     -   RFC 8707 Resource Parameter support
-    -   JWT token validation (expiration, audience, scopes)
-    -   403 Forbidden with `insufficient_scope` error
--   **Dual Transport**: Supports both `Stdio` (for local desktop apps like Claude) and `Http` (SSE) transports.
+    -   Per-tool scope requirements via `ScopeRequirement` metadata
+    -   > **Note:** Inbound JWT token validation (expiration, audience, scope enforcement) is the host application's responsibility via standard ASP.NET Core `AddJwtBearer`. MCPify does not ship its own JWT validator. Scope enforcement via `ScopeRequirementHandler` requires `AddAuthorization` policies/filters to be wired by the host.
+-   **Dual Transport**: Supports both `Stdio` (for local desktop apps like Claude) and `Http` (Streamable HTTP) transports.
 -   **Production Ready**: Robust logging, error handling, and configurable options.
 
 ## Supported Frameworks
@@ -472,18 +471,10 @@ builder.Services.AddMcpify(options =>
             { "write", "Write access" }
         }
     });
-
-    // Enable token validation (opt-in for backward compatibility)
-    options.TokenValidation = new TokenValidationOptions
-    {
-        EnableJwtValidation = true,
-        ValidateAudience = true,
-        ValidateScopes = true,
-        RequireOAuthConfiguredScopes = true,  // Auto-require scopes from OAuth config
-        ClockSkew = TimeSpan.FromMinutes(5)
-    };
 });
 ```
+
+> **Note:** Inbound JWT validation is the host application's responsibility. Use standard ASP.NET Core `AddAuthentication().AddJwtBearer(...)` to validate tokens (expiration, audience, issuer). MCPify's `McpAuthenticationHandler` handles MCP-protocol challenges and Protected Resource Metadata, not JWT signature validation.
 
 If you need to customize the advertised metadata—for example to add documentation links or override the detected resource URL—you can configure `McpAuthenticationOptions`:
 
