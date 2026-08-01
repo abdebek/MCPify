@@ -134,6 +134,7 @@ public static class DemoServiceExtensions
         {
             var secureTokenStore = sp.GetRequiredService<ISecureTokenStore>();
             var mcpContextAccessor = sp.GetRequiredService<IMcpContextAccessor>();
+            var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
             return new OAuthAuthorizationCodeAuthentication(
                 clientId: "demo-client-id",
                 authorizationEndpoint: $"{baseUrl}/connect/authorize",
@@ -145,7 +146,8 @@ public static class DemoServiceExtensions
                 usePkce: true,
                 redirectUri: oauthRedirectUri,
                 stateSecret: demoOptions.StateSecret,
-                allowDefaultSessionFallback: allowFallback);
+                allowDefaultSessionFallback: allowFallback,
+                httpClient: httpClientFactory.CreateClient());
         });
 
         services.AddLoginTool(sp => new LoginTool());

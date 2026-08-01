@@ -385,7 +385,7 @@ For HTTP transport, pass-through (or fallback with pass-through first) requires 
 Register the authentication provider in your `Program.cs` (ensure this is done before calling `AddMcpify`):
 
 ```csharp
-services.AddScoped<OAuthAuthorizationCodeAuthentication>(sp => {
+services.AddSingleton<OAuthAuthorizationCodeAuthentication>(sp => {
     return new OAuthAuthorizationCodeAuthentication(
         clientId: "your-client-id",
         authorizationEndpoint: "https://auth.example.com/authorize",
@@ -393,13 +393,17 @@ services.AddScoped<OAuthAuthorizationCodeAuthentication>(sp => {
         scope: "api_access",
         secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
         mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
-        redirectUri: "http://localhost:5000/auth/callback" // Your app must handle this
+        redirectUri: "http://localhost:5000/auth/callback", // Your app must handle this
+        stateSecret: "your-cryptographically-random-secret-at-least-32-chars",
+        httpClient: sp.GetRequiredService<IHttpClientFactory>().CreateClient()
     );
 });
 
 // Register the Login Tool
 services.AddLoginTool(sp => new LoginTool());
 ```
+
+> **Note:** Pass an `HttpClient` from `IHttpClientFactory` to avoid socket exhaustion. Always provide a `stateSecret` (at least 32 characters) — MCPify will throw if it's missing.
 
 ### Manual Client Registration vs DCR
 
