@@ -58,7 +58,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _secureTokenStore = secureTokenStore;
         _mcpContextAccessor = mcpContextAccessor;
         _clientSecret = clientSecret;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? HttpClientFallback.Create(nameof(OAuthAuthorizationCodeAuthentication));
         _redirectUri = redirectUri;
         _openBrowserAction = openBrowserAction;
         _usePkce = usePkce;

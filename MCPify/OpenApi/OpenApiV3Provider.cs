@@ -3,6 +3,7 @@ using Microsoft.OpenApi.Exceptions;
 using Microsoft.OpenApi.Readers;
 using Microsoft.OpenApi.Readers.Exceptions;
 using MCPify.Core;
+using MCPify.Core.Auth;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
@@ -52,7 +53,7 @@ public class OpenApiV3Provider : IOpenApiProvider
         if (Uri.IsWellFormedUriString(source, UriKind.Absolute))
         {
             ValidateUri(source);
-            var httpClient = _httpClientFactory?.CreateClient() ?? new HttpClient { Timeout = _timeout };
+            var httpClient = _httpClientFactory?.CreateClient() ?? HttpClientFallback.Create(nameof(OpenApiV3Provider), _timeout);
             var disposeClient = _httpClientFactory == null;
             try
             {

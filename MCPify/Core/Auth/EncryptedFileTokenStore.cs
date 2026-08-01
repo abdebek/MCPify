@@ -157,7 +157,21 @@ public class EncryptedFileTokenStore : ISecureTokenStore
             return ms.ToArray();
         }
 
-        private byte[] GetOrCreateKey()
+        /// <summary>
+    /// Creates an EncryptedFileTokenStore using a key from the MCPIFY_TOKENSTORE_KEY
+    /// environment variable. Throws if not set. Use this for production deployments
+    /// where the key must not live next to the encrypted data.
+    /// </summary>
+    public static EncryptedFileTokenStore FromEnvironmentVariable(string basePath)
+    {
+        var key = Environment.GetEnvironmentVariable("MCPIFY_TOKENSTORE_KEY");
+        if (string.IsNullOrWhiteSpace(key))
+            throw new InvalidOperationException("MCPIFY_TOKENSTORE_KEY environment variable is not set. Set it to a cryptographically random string (at least 32 characters).");
+
+        return new EncryptedFileTokenStore(basePath, key);
+    }
+
+    private byte[] GetOrCreateKey()
         {
             // Non-Windows without an explicit key: persist a random key file so tokens
             // survive process restarts. This is the primary path for Linux/macOS.

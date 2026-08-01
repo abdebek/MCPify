@@ -48,7 +48,7 @@ public class TokenExchangeAuthentication : IAuthenticationProvider
         _audience = audience;
         _tokenStore = tokenStore ?? throw new ArgumentNullException(nameof(tokenStore));
         _mcpContextAccessor = mcpContextAccessor ?? throw new ArgumentNullException(nameof(mcpContextAccessor));
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? HttpClientFallback.Create(nameof(TokenExchangeAuthentication));
         _providerName = providerName;
     }
 

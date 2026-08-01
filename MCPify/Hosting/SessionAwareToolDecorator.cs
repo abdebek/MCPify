@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Text.Json;
 using MCPify.Core;
@@ -6,6 +8,7 @@ using MCPify.Core.Session;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using System.Security.Claims;
@@ -98,10 +101,24 @@ public class SessionAwareToolDecorator : McpServerTool
             var scopeError = await TryEnforceScopesAsync(services, httpContextAccessor, accessor, token);
             if (scopeError != null)
             {
+                LogToolCall(services, _innerTool.ProtocolTool.Name, sessionId, "scope_denied", 0, null);
                 return scopeError;
             }
 
-            return await _innerTool.InvokeAsync(context, token);
+            var sw = Stopwatch.StartNew();
+            try
+            {
+                var result = await _innerTool.InvokeAsync(context, token);
+                sw.Stop();
+                LogToolCall(services, _innerTool.ProtocolTool.Name, sessionId, result.IsError == true ? "error" : "ok", sw.ElapsedMilliseconds, null);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                sw.Stop();
+                LogToolCall(services, _innerTool.ProtocolTool.Name, sessionId, "exception", sw.ElapsedMilliseconds, ex.Message);
+                throw;
+            }
         }
         finally
         {
@@ -189,4 +206,25 @@ public class SessionAwareToolDecorator : McpServerTool
         IsError = true,
         Content = new[] { new TextContentBlock { Text = $"Forbidden: {message}" } }
     };
+
+    private static readonly Meter s_meter = new("MCPify", "1.0");
+    private static readonly Counter<long> s_toolCalls = s_meter.CreateCounter<long>("mcpify.tool_calls");
+    private static readonly Histogram<double> s_toolDuration = s_meter.CreateHistogram<double>("mcpify.tool_duration_ms");
+
+    private static void LogToolCall(IServiceProvider services, string toolName, string? sessionId, string status, long elapsedMs, string? error)
+    {
+        s_toolCalls.Add(1, new KeyValuePair<string, object?>("tool", toolName), new KeyValuePair<string, object?>("status", status));
+        s_toolDuration.Record(elapsedMs, new KeyValuePair<string, object?>("tool", toolName));
+
+        var logger = services.GetService<ILoggerFactory>()?.CreateLogger("MCPify.ToolInvocation");
+        if (logger == null) return;
+
+        var sessionIdHash = sessionId != null ? sessionId.GetHashCode(StringComparison.Ordinal) : 0;
+        if (status == "exception")
+            logger.LogError("Tool {ToolName} session={SessionHash} status={Status} elapsed={ElapsedMs}ms error={Error}", toolName, sessionIdHash, status, elapsedMs, error);
+        else if (status == "scope_denied" || status == "error")
+            logger.LogWarning("Tool {ToolName} session={SessionHash} status={Status} elapsed={ElapsedMs}ms", toolName, sessionIdHash, status, elapsedMs);
+        else
+            logger.LogInformation("Tool {ToolName} session={SessionHash} status={Status} elapsed={ElapsedMs}ms", toolName, sessionIdHash, status, elapsedMs);
+    }
 }

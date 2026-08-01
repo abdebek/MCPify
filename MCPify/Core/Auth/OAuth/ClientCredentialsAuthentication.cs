@@ -33,7 +33,7 @@ public class ClientCredentialsAuthentication : IAuthenticationProvider
         _scope = scope;
         _secureTokenStore = secureTokenStore;
         _mcpContextAccessor = mcpContextAccessor;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? HttpClientFallback.Create(nameof(ClientCredentialsAuthentication));
         _resourceUrl = resourceUrl;
     }
 

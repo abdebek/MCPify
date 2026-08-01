@@ -87,9 +87,20 @@ OpenAPI spec URLs are validated before fetching:
 `EncryptedFileTokenStore` uses DPAPI (Windows) or AES-GCM with a machine key (Linux/macOS). The key is derived from the machine identity. If the key source is unavailable, the store **throws** — it does not fall back to an ephemeral key.
 
 For production:
-- Ensure the `AuthTokens` directory is protected (restrict filesystem permissions)
-- Consider a custom `ISecureTokenStore` backed by a secrets manager (Azure Key Vault, AWS Secrets Manager)
+- **Use `EncryptedFileTokenStore.FromEnvironmentVariable(path)`** — the key is sourced from `MCPIFY_TOKENSTORE_KEY` and never written to disk next to the tokens
+- Ensure the `AuthTokens` directory is protected (restrict filesystem permissions to the service account only)
+- Consider a custom `ISecureTokenStore` backed by a secrets manager (Azure Key Vault, AWS Secrets Manager, HashiCorp Vault)
 - Tokens are never logged
+- Session directories are hashed (SHA-256 of session ID) to prevent path traversal
+
+### Key Management by Platform
+
+| Platform | Default Key Source | Production Recommendation |
+|----------|-------------------|--------------------------|
+| Windows | DPAPI (CurrentUser scope) | Service account isolation; DPAPI is sufficient |
+| Linux | Auto-generated key file in token dir | Use `MCPIFY_TOKENSTORE_KEY` env var |
+| macOS | Auto-generated key file in token dir | Use `MCPIFY_TOKENSTORE_KEY` env var |
+| Container | Auto-generated key file (ephemeral) | Use `MCPIFY_TOKENSTORE_KEY` from secrets manager |
 
 ## Logging
 

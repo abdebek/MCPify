@@ -36,7 +36,7 @@ public class DeviceCodeAuthentication : IAuthenticationProvider
         _secureTokenStore = secureTokenStore;
         _mcpContextAccessor = mcpContextAccessor;
         _userPrompt = userPrompt;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? HttpClientFallback.Create(nameof(DeviceCodeAuthentication));
         _resourceUrl = resourceUrl;
     }
 
