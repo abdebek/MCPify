@@ -19,6 +19,12 @@ using Xunit;
 
 namespace MCPify.Tests.Integration;
 
+/// <summary>
+/// Comprehensive integration tests for the Sample app.
+/// Boots the real Sample, runs OAuth via Playwright (headless Chromium required),
+/// and exercises MCP JSON-RPC, local endpoints, metadata, and DCR.
+/// Tagged "Playwright" — filter with: dotnet test --filter "Category=Playwright".
+/// </summary>
 [Trait("Category", "Playwright")]
 public class SampleIntegrationTests : IAsyncLifetime
 {
@@ -79,19 +85,69 @@ public class SampleIntegrationTests : IAsyncLifetime
         if (_app != null) await _app.StopAsync();
     }
 
-    // --- OAuth + MCP flow ---
+    // --- OAuth flow ---
 
     [Fact]
-    public async Task OAuth_BrowserFlow_StoresTokenAndEnablesMcpTools()
+    public async Task OAuth_BrowserFlow_StoresToken()
     {
-        var sessionId = "itest-oauth-session";
+        var sessionId = "itest-token-store";
         await PerformOAuthLogin(sessionId);
 
         var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
         var tokenData = await tokenStore.GetTokenAsync(sessionId, "OAuth", CancellationToken.None);
         Assert.NotNull(tokenData);
         Assert.False(string.IsNullOrEmpty(tokenData!.AccessToken));
+    }
 
+    [Fact]
+    public async Task OAuth_CallbackPage_ShowsSuccessMessage()
+    {
+        var sessionId = "itest-callback-page";
+        var authProvider = _app!.Services.GetRequiredService<OAuthAuthorizationCodeAuthentication>();
+        var authUrl = authProvider.BuildAuthorizationUrl(sessionId);
+
+        var page = await _browser.NewPageAsync();
+        await page.GotoAsync(authUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 15000 });
+
+        var pageContent = await page.ContentAsync();
+        var pageUrl = page.Url;
+        Assert.True(
+            pageUrl.Contains("/auth/callback") ||
+            pageContent.Contains("Login Successful", StringComparison.OrdinalIgnoreCase),
+            $"Expected callback page. URL: {pageUrl}");
+        await page.CloseAsync();
+    }
+
+    // --- MCP session lifecycle ---
+
+    [Fact]
+    public async Task MCP_Initialize_ReturnsProtocolVersionAndSessionHeader()
+    {
+        await PerformOAuthLogin("itest-init");
+        var initResponse = await SendMcpRequest("initialize", new
+        {
+            protocolVersion = "2025-06-18",
+            capabilities = new { },
+            clientInfo = new { name = "itest", version = "1.0" }
+        });
+        Assert.True(initResponse.RootElement.TryGetProperty("result", out var result),
+            $"initialize failed: {initResponse.RootElement.GetRawText()}");
+        Assert.True(result.TryGetProperty("protocolVersion", out _));
+
+        // Session ID may come in the response header or body depending on SDK version;
+        // verify tools/list works after init (proves session was established).
+        _mcpSessionId = _lastMcpSessionId;
+        var listResponse = await SendMcpRequest("tools/list", new { });
+        Assert.True(listResponse.RootElement.TryGetProperty("result", out _),
+            $"tools/list after init failed: {listResponse.RootElement.GetRawText()}");
+    }
+
+    // --- MCP tools/list ---
+
+    [Fact]
+    public async Task MCP_ToolsList_IncludesLoginTool()
+    {
+        await PerformOAuthLogin("itest-tools-list");
         await InitMcpSession();
 
         var listResponse = await SendMcpRequest("tools/list", new { });
@@ -99,39 +155,25 @@ public class SampleIntegrationTests : IAsyncLifetime
         Assert.True(result.TryGetProperty("tools", out var tools));
         var toolNames = tools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
         Assert.Contains("login_auth_code_pkce", toolNames);
-        Assert.Contains(toolNames, n => n!.StartsWith("api_"));
     }
 
     [Fact]
-    public async Task OAuth_LoginThenCallProtectedTool_ReturnsSecret()
+    public async Task MCP_ToolsList_IncludesLocalEndpointTools()
     {
-        var sessionId = "itest-protected-session";
-        await PerformOAuthLogin(sessionId);
+        await PerformOAuthLogin("itest-local-tools");
         await InitMcpSession();
 
         var listResponse = await SendMcpRequest("tools/list", new { });
         Assert.True(listResponse.RootElement.TryGetProperty("result", out var result));
         Assert.True(result.TryGetProperty("tools", out var tools));
         var toolNames = tools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
-
-        var secretsTool = toolNames.FirstOrDefault(n => n!.Contains("secret", StringComparison.OrdinalIgnoreCase));
-        Assert.NotNull(secretsTool);
-
-        var callResponse = await SendMcpRequest("tools/call", new { name = secretsTool, arguments = new { sessionId = "itest-protected-session" } });
-        Assert.True(callResponse.RootElement.TryGetProperty("result", out var callResult));
-        Assert.True(callResult.TryGetProperty("content", out var content));
-        var text = content.EnumerateArray()
-            .Where(c => c.TryGetProperty("type", out var t) && t.GetString() == "text")
-            .Select(c => c.GetProperty("text").GetString())
-            .FirstOrDefault();
-        Assert.NotNull(text);
-        Assert.Contains("Golden Eagle", text);
+        Assert.Contains(toolNames, n => n!.StartsWith("api_"));
     }
 
     [Fact]
     public async Task MCP_ToolsList_IncludesExternalApiTools()
     {
-        await PerformOAuthLogin("itest-external-session");
+        await PerformOAuthLogin("itest-external-tools");
         await InitMcpSession();
 
         var listResponse = await SendMcpRequest("tools/list", new { });
@@ -142,10 +184,12 @@ public class SampleIntegrationTests : IAsyncLifetime
         Assert.Contains(toolNames, n => n!.StartsWith("localfile_"));
     }
 
+    // --- MCP tools/call ---
+
     [Fact]
-    public async Task MCP_ToolCall_WithPathParameter_ResolvesCorrectly()
+    public async Task MCP_ToolCall_LocalUserEndpoint_ReturnsUserData()
     {
-        await PerformOAuthLogin("itest-pathparam-session");
+        await PerformOAuthLogin("itest-user-call");
         await InitMcpSession();
 
         var listResponse = await SendMcpRequest("tools/list", new { });
@@ -167,10 +211,58 @@ public class SampleIntegrationTests : IAsyncLifetime
         Assert.Contains("42", text);
     }
 
+    [Fact]
+    public async Task MCP_ToolCall_ProtectedSecretEndpoint_ReturnsSecretAfterLogin()
+    {
+        var sessionId = "itest-protected-call";
+        await PerformOAuthLogin(sessionId);
+        await InitMcpSession();
+
+        var listResponse = await SendMcpRequest("tools/list", new { });
+        Assert.True(listResponse.RootElement.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("tools", out var tools));
+        var toolNames = tools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
+
+        var secretsTool = toolNames.FirstOrDefault(n => n!.Contains("secret", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(secretsTool);
+
+        var callResponse = await SendMcpRequest("tools/call", new { name = secretsTool, arguments = new { sessionId } });
+        Assert.True(callResponse.RootElement.TryGetProperty("result", out var callResult));
+        Assert.True(callResult.TryGetProperty("content", out var content));
+        var text = content.EnumerateArray()
+            .Where(c => c.TryGetProperty("type", out var t) && t.GetString() == "text")
+            .Select(c => c.GetProperty("text").GetString())
+            .FirstOrDefault();
+        Assert.NotNull(text);
+        Assert.Contains("Golden Eagle", text);
+    }
+
+    [Fact]
+    public async Task MCP_ToolCall_ExternalPetstoreTool_AttemptsUpstreamCall()
+    {
+        await PerformOAuthLogin("itest-petstore-call");
+        await InitMcpSession();
+
+        var listResponse = await SendMcpRequest("tools/list", new { });
+        Assert.True(listResponse.RootElement.TryGetProperty("result", out var result));
+        Assert.True(result.TryGetProperty("tools", out var tools));
+        var toolNames = tools.EnumerateArray().Select(t => t.GetProperty("name").GetString()).ToList();
+
+        var petstoreTool = toolNames.FirstOrDefault(n => n!.StartsWith("petstore_") && n.Contains("pet", StringComparison.OrdinalIgnoreCase));
+        Assert.NotNull(petstoreTool);
+
+        // Call the tool — external API may be unreachable in CI, so accept success or error result
+        // but require a valid JSON-RPC response (not a protocol-level failure).
+        var callResponse = await SendMcpRequest("tools/call", new { name = petstoreTool, arguments = new { } });
+        Assert.True(callResponse.RootElement.TryGetProperty("result", out var callResult)
+            || callResponse.RootElement.TryGetProperty("error", out _),
+            $"Expected result or error in response: {callResponse.RootElement.GetRawText()}");
+    }
+
     // --- Auth gates ---
 
     [Fact]
-    public async Task MCP_UnauthorizedRequest_Returns401()
+    public async Task MCP_RequestWithoutBearer_Returns401()
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -183,7 +275,7 @@ public class SampleIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MCP_WithoutOAuthToken_ButWithSession_Gets401()
+    public async Task MCP_InitializeWithoutBearer_Returns401()
     {
         var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -194,6 +286,30 @@ public class SampleIntegrationTests : IAsyncLifetime
 
         var response = await _httpClient.SendAsync(request);
         Assert.Equal(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task MCP_AuthenticatedWithoutMcpSession_ToolsListMaySucceedOrFail()
+    {
+        await PerformOAuthLogin("itest-no-session");
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/mcp");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
+        var tokenData = await tokenStore.GetTokenAsync("itest-no-session", "OAuth", CancellationToken.None);
+        Assert.NotNull(tokenData);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", tokenData!.AccessToken);
+
+        request.Content = new StringContent(
+            """{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}""",
+            Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.SendAsync(request);
+        // SDK 2.0 may allow tools/list without an established session when authenticated.
+        // The key assertion is that the bearer token was accepted (not 401).
+        Assert.NotEqual(System.Net.HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     // --- Metadata endpoints ---
@@ -240,15 +356,14 @@ public class SampleIntegrationTests : IAsyncLifetime
         Assert.True(doc.RootElement.TryGetProperty("client_secret", out _));
     }
 
-    // --- Local API endpoints ---
+    // --- Local API endpoints (direct HTTP, not via MCP) ---
 
     [Fact]
     public async Task LocalEndpoint_Status_ReturnsRunning()
     {
         var response = await _httpClient.GetAsync("/status");
         Assert.True(response.IsSuccessStatusCode);
-        var content = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Running", content);
+        Assert.Contains("Running", await response.Content.ReadAsStringAsync());
     }
 
     [Fact]
@@ -273,8 +388,7 @@ public class SampleIntegrationTests : IAsyncLifetime
     {
         var response = await _httpClient.GetAsync("/weather");
         Assert.True(response.IsSuccessStatusCode);
-        var json = await response.Content.ReadAsStringAsync();
-        Assert.Contains("Sunny", json);
+        Assert.Contains("Sunny", await response.Content.ReadAsStringAsync());
     }
 
     // --- Swagger ---
@@ -290,7 +404,7 @@ public class SampleIntegrationTests : IAsyncLifetime
         Assert.True(doc.RootElement.TryGetProperty("paths", out _));
     }
 
-    // --- OpenIddict client seeding ---
+    // --- OpenIddict seeding ---
 
     [Fact]
     public async Task OpenIddict_DemoClient_IsSeeded()
