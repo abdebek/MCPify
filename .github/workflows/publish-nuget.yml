@@ -4,7 +4,8 @@ name: Publish to NuGet
 # - Policy workflow file name must be: publish-nuget.yml
 # - Repository: abdebek/MCPify
 # - Environment: leave empty (this job does not set environment:)
-# - Create repo secret NUGET_USER = nuget.org profile username (not email, not API key)
+# - nuget.org username for NuGet/login is the public profile slug (default: abdebek).
+#   Override with secrets/vars.NUGET_USER or workflow_dispatch nuget_user if needed.
 on:
   push:
     tags:
@@ -14,6 +15,11 @@ on:
       version:
         description: 'Version to publish (e.g. 0.0.15-preview)'
         required: true
+      nuget_user:
+        description: 'Optional nuget.org username override (default: abdebek)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   publish:
@@ -26,6 +32,22 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Resolve NuGet username
+      id: nuget_user
+      env:
+        SECRET_USER: ${{ secrets.NUGET_USER }}
+        VAR_USER: ${{ vars.NUGET_USER }}
+        INPUT_USER: ${{ github.event.inputs.nuget_user }}
+      run: |
+        # Prefer: workflow_dispatch input → secret → repository variable → package owner default
+        # Public profile: https://www.nuget.org/profiles/abdebek (not email, not API key)
+        USER_NAME="${INPUT_USER:-}"
+        if [ -z "$USER_NAME" ]; then USER_NAME="${SECRET_USER:-}"; fi
+        if [ -z "$USER_NAME" ]; then USER_NAME="${VAR_USER:-}"; fi
+        if [ -z "$USER_NAME" ]; then USER_NAME="abdebek"; fi
+        echo "name=$USER_NAME" >> "$GITHUB_OUTPUT"
+        echo "Using nuget.org username: $USER_NAME"
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -73,7 +95,7 @@ jobs:
       id: login
       with:
         # nuget.org profile username (Trusted Publishing), NOT email and NOT a long-lived API key
-        user: ${{ secrets.NUGET_USER }}
+        user: ${{ steps.nuget_user.outputs.name }}
 
     - name: Publish to NuGet (Trusted Publishing)
       run: |
