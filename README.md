@@ -351,6 +351,41 @@ builder.Services.AddMcpify(options =>
 
 Without `AllowClientTokenPassthrough = true`, MCPify fails fast at startup for HTTP.
 
+#### Friendly OAuth registration (OpenAPI-aware)
+
+Use `AddOAuthAuthorizationCodeAuthenticator` to build server-managed auth from options or an OpenAPI OAuth2 **authorization_code** security scheme (issue #2):
+
+```csharp
+builder.Services.AddMcpifyAuthentication();
+builder.Services.AddOAuthAuthorizationCodeAuthenticator(options =>
+{
+    options.ClientId = "my-client";
+    options.ClientSecret = "secret"; // optional for public clients
+    options.RedirectUri = "https://localhost:5001/auth/callback";
+    options.StateSecret = builder.Configuration["Demo:StateSecret"]; // ≥ 32 chars
+    // Either set endpoints explicitly...
+    // options.AuthorizationEndpoint = "https://auth.example.com/authorize";
+    // options.TokenEndpoint = "https://auth.example.com/token";
+    // ...or load them from OpenAPI:
+    options.OpenApiUrl = "https://api.example.com/swagger.json";
+});
+```
+
+#### Login strategy (remote / headless)
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    // Authorization-code flow: Auto | Always | Never open a browser (#9)
+    options.LoginBrowserBehavior = BrowserLaunchBehavior.Never;
+
+    // Or use device code (register DeviceCodeAuthentication in DI first)
+    // options.LoginFlow = LoginFlow.DeviceCode;
+});
+```
+
+Outbound auth on tools uses **`UpstreamAuth`** / **`ITokenProvider`** (PassThrough, ServerManaged, TokenExchange, None) — no per-tool authentication factory is required when the MCP client supplies tokens (#20).
+
 #### Token Exchange (RFC 8693)
 
 Exchange the MCP client's access token for an upstream API token at an authorization server. Requires `AddMcpifyAuthentication()` for the secure token store:

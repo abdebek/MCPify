@@ -51,6 +51,9 @@ public class OAuthMiddlewareTests
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         var authenticateHeader = string.Join(" ", response.Headers.WwwAuthenticate.Select(h => h.ToString()));
         Assert.Contains("resource_metadata", authenticateHeader);
+        // RFC 6750 / MCP Authorization: SHOULD include scope on WWW-Authenticate
+        Assert.Contains("scope=", authenticateHeader, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("read", authenticateHeader, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

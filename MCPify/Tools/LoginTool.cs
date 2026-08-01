@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 
 using MCPify.Core;
 using MCPify.Core.Auth;
+using MCPify.Core.Auth.DeviceCode;
 using MCPify.Core.Auth.OAuth;
 using MCPify.Core.Session;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +23,9 @@ public class LoginTool : McpServerTool
     public override Tool ProtocolTool => new()
     {
         Name = "login_auth_code_pkce",
-        Description = "Initiates the OAuth login flow. In interactive environments, attempts to open the system browser with the authorization URL and waits for the user to complete the login. In headless environments (detected automatically or configured via LoginBrowserBehavior option), returns the authorization URL immediately for manual authentication.",
+        Description = "Initiates login for upstream APIs. Supports authorization-code + PKCE (browser or manual URL via LoginBrowserBehavior) " +
+                      "or device-code flow when McpifyOptions.LoginFlow is DeviceCode (requires DeviceCodeAuthentication registered). " +
+                      "Headless/remote hosts should set LoginBrowserBehavior=Never or LoginFlow=DeviceCode.",
         InputSchema = JsonDocument.Parse("""{ "type": "object", "properties": { "sessionId": { "type": "string" } } }""").RootElement
     };
 
@@ -63,21 +66,92 @@ public class LoginTool : McpServerTool
 
         logger?.LogInformation("Initiating login for session {SessionId}", sessionId);
 
-        var auth = context.Services!.GetRequiredService<OAuthAuthorizationCodeAuthentication>();
         var tokenStore = context.Services!.GetRequiredService<ISecureTokenStore>();
         var sessionMap = context.Services!.GetService<ISessionMap>();
         var options = context.Services!.GetService<McpifyOptions>() ?? new McpifyOptions();
-        var providerName = auth.ProviderName;
 
         if (sessionMap != null)
         {
             sessionMap.UpgradeSession(Constants.DefaultSessionId, sessionId);
         }
 
+        if (options.LoginFlow == LoginFlow.DeviceCode)
+        {
+            return await RunDeviceCodeLoginAsync(context.Services!, sessionId, options, logger, token);
+        }
+
+        return await RunAuthorizationCodeLoginAsync(context.Services!, sessionId, options, tokenStore, logger, token);
+    }
+
+    private async ValueTask<CallToolResult> RunDeviceCodeLoginAsync(
+        IServiceProvider services,
+        string sessionId,
+        McpifyOptions options,
+        ILogger? logger,
+        CancellationToken token)
+    {
+        var deviceAuth = services.GetService<DeviceCodeAuthentication>();
+        if (deviceAuth is null)
+        {
+            return new CallToolResult
+            {
+                IsError = true,
+                Content = new[]
+                {
+                    new TextContentBlock
+                    {
+                        Text = "LoginFlow is DeviceCode but DeviceCodeAuthentication is not registered. " +
+                              "Register it in DI or set McpifyOptions.LoginFlow = AuthorizationCode."
+                    }
+                }
+            };
+        }
+
+        if (services.GetService<IMcpContextAccessor>() is { } accessor)
+        {
+            accessor.SessionId = sessionId;
+        }
+
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "https://mcpify.local/device-login");
+            await deviceAuth.ApplyAsync(request, token);
+            logger?.LogInformation("Device code login succeeded for session {SessionId}", sessionId);
+            return new CallToolResult
+            {
+                Content = new[]
+                {
+                    new TextContentBlock
+                    {
+                        Text = $"Device code login successful for session '{sessionId}'. You can call authenticated tools now."
+                    }
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "Device code login failed for session {SessionId}", sessionId);
+            return new CallToolResult
+            {
+                IsError = true,
+                Content = new[] { new TextContentBlock { Text = $"Device code login failed: {ex.Message}" } }
+            };
+        }
+    }
+
+    private async ValueTask<CallToolResult> RunAuthorizationCodeLoginAsync(
+        IServiceProvider services,
+        string sessionId,
+        McpifyOptions options,
+        ISecureTokenStore tokenStore,
+        ILogger? logger,
+        CancellationToken token)
+    {
+        var auth = services.GetRequiredService<OAuthAuthorizationCodeAuthentication>();
+        var providerName = auth.ProviderName;
         var authUrl = auth.BuildAuthorizationUrl(sessionId);
         var browserOpened = false;
 
-        // Determine whether to attempt browser launch based on configuration
         if (ShouldOpenBrowser(options.LoginBrowserBehavior, logger))
         {
             try
@@ -93,8 +167,7 @@ public class LoginTool : McpServerTool
         }
         else
         {
-            logger?.LogInformation("Browser launch skipped (headless environment detected or disabled by configuration)");
-            // Return the URL immediately without waiting - no browser means no need to poll
+            logger?.LogInformation("Browser launch skipped (headless environment detected or configured via LoginBrowserBehavior)");
             return new CallToolResult
             {
                 Content = new[] { new TextContentBlock { Text = $"Please open this URL to authenticate: {authUrl}" } }
@@ -107,14 +180,14 @@ public class LoginTool : McpServerTool
             var tokenData = await tokenStore.GetTokenAsync(sessionId, providerName, token);
             if (tokenData != null && !string.IsNullOrEmpty(tokenData.AccessToken))
             {
-                 if (options.Transport == McpTransportType.Stdio &&
-                     !string.Equals(sessionId, Constants.DefaultSessionId, StringComparison.Ordinal))
-                 {
-                     await tokenStore.SaveTokenAsync(Constants.DefaultSessionId, providerName, tokenData, token);
-                 }
+                if (options.Transport == McpTransportType.Stdio &&
+                    !string.Equals(sessionId, Constants.DefaultSessionId, StringComparison.Ordinal))
+                {
+                    await tokenStore.SaveTokenAsync(Constants.DefaultSessionId, providerName, tokenData, token);
+                }
 
-                 logger?.LogInformation("Login successful for session {SessionId}", sessionId);
-                 return new CallToolResult
+                logger?.LogInformation("Login successful for session {SessionId}", sessionId);
+                return new CallToolResult
                 {
                     Content = new[] { new TextContentBlock { Text = $"Login successful! Session '{sessionId}' is now authenticated." } }
                 };

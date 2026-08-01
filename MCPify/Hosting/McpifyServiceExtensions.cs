@@ -153,6 +153,9 @@ public static class McpifyServiceExtensions
         services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<McpAuthenticationOptions>, McpAuthenticationOptionsSetup>());
         services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureNamedOptions<McpAuthenticationOptions>, McpAuthenticationOptionsSetup>());
 
+        // Append scope= on WWW-Authenticate for MCP 401 challenges (RFC 6750 / MCP Authorization SHOULD).
+        services.AddWwwAuthenticateScopeMiddleware();
+
         // Register the MCP authentication scheme by name only. Do NOT mutate the host app's
         // DefaultScheme / DefaultAuthenticateScheme / DefaultChallengeScheme — a library must
         // not hijack the app's default auth. Host apps that want MCP as the default can set

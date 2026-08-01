@@ -82,8 +82,15 @@ public class McpifyOptions
     /// Set to <see cref="BrowserLaunchBehavior.Never"/> for headless/remote environments to avoid
     /// unnecessary timeouts waiting for browser launch to fail.
     /// Defaults to <see cref="BrowserLaunchBehavior.Auto"/> which detects headless environments at runtime.
+    /// Only applies when <see cref="LoginFlow"/> is <see cref="LoginFlow.AuthorizationCode"/>.
     /// </summary>
     public BrowserLaunchBehavior LoginBrowserBehavior { get; set; } = BrowserLaunchBehavior.Auto;
+
+    /// <summary>
+    /// Selects which login tool flow to run: authorization-code (+ browser behavior) or device code.
+    /// Defaults to <see cref="LoginFlow.AuthorizationCode"/>.
+    /// </summary>
+    public LoginFlow LoginFlow { get; set; } = LoginFlow.AuthorizationCode;
     
     /// <summary>
     /// Optional list of OAuth2 configurations to be added to the OAuthConfigurationStore.
@@ -143,6 +150,24 @@ public enum McpTransportType
     /// Uses Standard Input/Output (Stdio) for communication. Best for local integration with desktop apps (e.g. Claude).
     /// </summary>
     Stdio
+}
+
+/// <summary>
+/// Selects the interactive login flow used by <c>LoginTool</c>.
+/// </summary>
+public enum LoginFlow
+{
+    /// <summary>
+    /// OAuth 2.0 authorization code + PKCE (browser or manual URL via <see cref="BrowserLaunchBehavior"/>).
+    /// </summary>
+    AuthorizationCode = 0,
+
+    /// <summary>
+    /// OAuth 2.0 device authorization grant. Requires a registered
+    /// <c>MCPify.Core.Auth.DeviceCode.DeviceCodeAuthentication</c> service.
+    /// Ideal for remote/headless hosts that cannot complete a browser redirect.
+    /// </summary>
+    DeviceCode = 1,
 }
 
 /// <summary>

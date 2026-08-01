@@ -9,6 +9,13 @@ This project follows [Semantic Versioning](https://semver.org/) with a `*-previe
 
 - **Default token-store `providerName` is namespaced by client id** (`OAuth:{clientId}`, `ClientCredentials:{clientId}`, `DeviceCode:{clientId}`) when `providerName` is omitted. Explicit `providerName` is unchanged. Existing tokens stored under bare `"OAuth"` / `"ClientCredentials"` / `"DeviceCode"` will not match until re-login or setting the old name explicitly.
 
+### GitHub issues addressed
+
+- **#14** — `WWW-Authenticate` on 401 now includes `scope="..."` from configured OAuth scopes (RFC 6750 / MCP Authorization SHOULD).
+- **#9** — `LoginBrowserBehavior` (Auto/Always/Never) plus `LoginFlow` (`AuthorizationCode` | `DeviceCode`) for remote/headless strategy selection.
+- **#2** — `OAuthAuthorizationCodeAuthenticator` / `AddOAuthAuthorizationCodeAuthenticator` builds auth-code clients from options or OpenAPI OAuth2 security schemes.
+- **#20** — Outbound auth uses `UpstreamAuth` + `ITokenProvider` (PassThrough / ServerManaged / None); no per-tool authentication factory required for client-managed tokens.
+
 
 - **MCP SDK upgraded to 2.0.0** (from 0.6.0-preview.1). Streamable HTTP is now the only HTTP transport; SSE transport is removed.
 - **Project SDK changed** from `Microsoft.NET.Sdk.Web` to `Microsoft.NET.Sdk` + `FrameworkReference Include="Microsoft.AspNetCore.App"`. Library no longer forces a web project.
