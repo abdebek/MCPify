@@ -32,7 +32,8 @@ jobs:
     - name: Test
       run: |
         dotnet test MCPify.slnx --configuration Release --no-build --verbosity normal \
-          --filter "Category!=Playwright"
+          --filter "Category!=Playwright" \
+          --logger "console;verbosity=detailed"
 
     - name: Pack
       run: dotnet pack MCPify/MCPify.csproj --configuration Release --no-build --output ./artifacts

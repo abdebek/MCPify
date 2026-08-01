@@ -54,6 +54,10 @@ public class LoginToolTests
         services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
         services.AddSingleton<ISecureTokenStore>(tokenStore);
         services.AddSingleton<LoginTool>();
+        // Always enter the poll loop. LoginBrowserBehavior.Auto on headless CI (no DISPLAY)
+        // returns the auth URL immediately without waiting for a token — that is correct product
+        // behavior for agents, but this test specifically covers the polling success path.
+        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Always });
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
@@ -93,18 +97,18 @@ public class LoginToolTests
         services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
         services.AddSingleton<ISecureTokenStore>(tokenStore);
         services.AddSingleton<LoginTool>();
+        // Never open browser → return URL immediately (stable on headless CI and local)
+        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Never });
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
-
-        var cts = new CancellationTokenSource(1000); 
 
         var arguments = new Dictionary<string, JsonElement>();
         var callToolParams = new CallToolRequestParams { Name = "login", Arguments = arguments };
         var context = CreateContext(callToolParams, provider);
 
         // Act
-        var result = await tool.InvokeAsync(context, cts.Token);
+        var result = await tool.InvokeAsync(context, CancellationToken.None);
 
         // Assert
         Assert.True(result.IsError != true);

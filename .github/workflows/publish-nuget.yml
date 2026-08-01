@@ -55,8 +55,9 @@ jobs:
 
     - name: Test
       run: |
-        dotnet test MCPify.slnx --configuration Release --no-build --verbosity minimal \
-          --filter "Category!=Playwright"
+        dotnet test MCPify.slnx --configuration Release --no-build --verbosity normal \
+          --filter "Category!=Playwright" \
+          --logger "console;verbosity=detailed"
 
     - name: Pack
       run: |
