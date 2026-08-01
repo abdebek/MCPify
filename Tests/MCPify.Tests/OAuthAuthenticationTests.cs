@@ -27,7 +27,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             store,
             accessor,
             httpClient: _oauthServer.CreateClient(),
-            redirectUri: "http://localhost/callback");
+            redirectUri: "http://localhost/callback",
+            stateSecret: "test-state-secret-key-for-hmac");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -52,7 +53,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             store,
             accessor,
             httpClient: _oauthServer.CreateClient(),
-            redirectUri: "http://localhost/callback");
+            redirectUri: "http://localhost/callback",
+            stateSecret: "test-state-secret-key-for-hmac");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -82,7 +84,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             accessor,
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
-            allowDefaultSessionFallback: true);
+            allowDefaultSessionFallback: true,
+            stateSecret: "test-state-secret-key-for-hmac");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 
@@ -112,7 +115,8 @@ public class OAuthAuthenticationTests : IAsyncLifetime
             accessor,
             httpClient: _oauthServer.CreateClient(),
             redirectUri: "http://localhost/callback",
-            allowDefaultSessionFallback: false);
+            allowDefaultSessionFallback: false,
+            stateSecret: "test-state-secret-key-for-hmac");
 
         var request = new HttpRequestMessage(HttpMethod.Get, "http://api.com");
 

@@ -125,67 +125,9 @@ public static class McpifyEndpointExtensions
             }
         }
 
-        // Map OAuth Protected Resource Metadata only if auth is configured
-        if (oauthStore != null)
-        {
-            app.MapGet("/.well-known/oauth-protected-resource", (OAuthConfigurationStore store, IServer server, McpifyOptions opts) =>
-            {
-                var configs = store.GetConfigurations().ToList();
-                if (!configs.Any())
-                {
-                    return Results.NotFound(new { error = "OAuth not configured" });
-                }
-
-                var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
-                var resourceUrl = opts.ResourceUrlOverride;
-                if (string.IsNullOrWhiteSpace(resourceUrl))
-                {
-                    resourceUrl = opts.LocalEndpoints?.BaseUrlOverride;
-                }
-
-                if (string.IsNullOrWhiteSpace(resourceUrl))
-                {
-                    resourceUrl = addresses?.FirstOrDefault();
-                }
-
-                resourceUrl = (string.IsNullOrWhiteSpace(resourceUrl) ? Constants.DefaultBaseUrl : resourceUrl).TrimEnd('/');
-
-                static IEnumerable<string> ResolveAuthorizationServers(OAuth2Configuration config)
-                {
-                    if (Uri.TryCreate(config.AuthorizationUrl, UriKind.Absolute, out var uri))
-                    {
-                        yield return uri.GetLeftPart(UriPartial.Authority);
-                    }
-                }
-
-                // If any config has AuthorizationServers, only use those; otherwise, fall back to AuthorizationUrl authority.
-                List<string> issuers;
-                if (configs.Any(c => c.AuthorizationServers?.Any() == true))
-                {
-                    issuers = configs
-                        .Where(c => c.AuthorizationServers?.Any() == true)
-                        .SelectMany(c => c.AuthorizationServers)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-                }
-                else
-                {
-                    issuers = configs
-                        .SelectMany(ResolveAuthorizationServers)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-                }
-
-                return Results.Ok(new
-                {
-                    resource = resourceUrl,
-                    authorization_servers = issuers,
-                    scopes_supported = configs.SelectMany(c => c.Scopes.Keys).Distinct().ToList(),
-                    bearer_methods_supported = new[] { "header" } // We only support Bearer header
-                });
-            })
-            .ExcludeFromDescription();
-        }
+        // Note: /.well-known/oauth-protected-resource is served by the official
+        // McpAuthenticationHandler via McpAuthenticationOptionsSetup.OnResourceMetadataRequest.
+        // Do not map it manually here — that would create a duplicate route.
 
         return app;
     }

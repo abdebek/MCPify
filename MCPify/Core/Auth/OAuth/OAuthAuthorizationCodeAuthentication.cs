@@ -63,7 +63,9 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
         _openBrowserAction = openBrowserAction;
         _usePkce = usePkce;
         _authorizationUrlEmitter = authorizationUrlEmitter;
-        _stateSecret = stateSecret ?? "A_VERY_LONG_AND_SECURE_SECRET_KEY_FOR_HMAC_SIGNING";
+        _stateSecret = stateSecret ?? throw new ArgumentNullException(nameof(stateSecret),
+            "stateSecret is required for OAuth state signing. Pass a cryptographically random key " +
+            "(at least 32 bytes) or set the MCPIFY_STATE_SECRET environment variable.");
         _allowDefaultSessionFallback = allowDefaultSessionFallback;
         _resourceUrl = resourceUrl;
     }
@@ -353,11 +355,7 @@ public class OAuthAuthorizationCodeAuthentication : IAuthenticationProvider
 
         if (!VerifySignature(jsonState, signature, _stateSecret))
         {
-            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_stateSecret));
-            var computed = hmac.ComputeHash(Encoding.UTF8.GetBytes(jsonState));
-            var computedB64 = Convert.ToBase64String(computed);
-            var receivedB64 = Convert.ToBase64String(signature);
-            throw new CryptographicException($"Invalid state signature. Received: {receivedB64}, Computed: {computedB64}. JsonState: {jsonState}");
+            throw new CryptographicException("Invalid state signature. The OAuth state may have been tampered with or the signing key has changed.");
         }
 
         var oauthState = JsonSerializer.Deserialize<OAuthState>(jsonState)

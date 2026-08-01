@@ -68,7 +68,8 @@ public class AuthCallbackTests
                 tokenEndpoint: "http://localhost/token",
                 scope: "scope",
                 secureTokenStore: sp.GetRequiredService<ISecureTokenStore>(),
-                mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>()
+                mcpContextAccessor: sp.GetRequiredService<IMcpContextAccessor>(),
+                stateSecret: "test-state-secret-key-for-hmac"
             ));
 
         var app = builder.Build();
