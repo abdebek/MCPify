@@ -3,7 +3,12 @@
 [![NuGet](https://img.shields.io/nuget/v/MCPify.svg)](https://www.nuget.org/packages/MCPify/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**MCPify** is a .NET library that bridges the gap between your existing ASP.NET Core APIs (or external OpenAPI/Swagger specs) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). It allows you to expose API operations as MCP tools that can be consumed by AI assistants like Claude Desktop, ensuring seamless integration with your existing services.
+**MCPify** is a .NET library that turns OpenAPI/Swagger specs and ASP.NET Core endpoints into [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tools for AI assistants like Claude Desktop.
+
+Two modes:
+
+- **External API import** — pass an OpenAPI URL or file path + base URL. No ASP.NET Core host required; works in any .NET app via `AddMcpifyCore()`.
+- **Local endpoint proxy + MCP server** — expose your own ASP.NET Core routes as tools and host the MCP endpoint. Requires an ASP.NET Core host via `AddMcpify()`.
 
 > **Latest Release:** v0.0.15-preview - SDK 2.0, honesty/auth composition baseline, Playwright smokes (still preview)
 
@@ -71,7 +76,7 @@
 
 ### 1. Installation
 
-Install the package into your ASP.NET Core project:
+Install the package into your project:
 
 ```bash
 dotnet add package MCPify --version 0.0.15-preview
@@ -79,48 +84,62 @@ dotnet add package MCPify --version 0.0.15-preview
 
 > **Preview notice:** MCPify is on the `0.0.x-preview` line. Breaking changes may occur between preview releases. Pin an exact version (e.g. `0.0.15-preview`) rather than a floating range to avoid surprises. A `0.1.0-preview` soft-freeze is planned once tool curation and local-tool DX are feature-complete.
 
-### 2. Configuration
+### 2a. External APIs Only (No ASP.NET Core Host)
 
-Add MCPify to your `Program.cs`:
+If you just want to expose external OpenAPI specs as MCP tools (no local endpoints, no MCP HTTP server), use `AddMcpifyCore()` with Stdio transport in any .NET console app:
+
+```csharp
+using MCPify.Hosting;
+
+var builder = Host.CreateDefaultBuilder(args);
+builder.Services.AddMcpifyCore(options =>
+{
+    options.Transport = McpTransportType.Stdio;
+    options.ExternalApis.Add(new ExternalApiOptions
+    {
+        ApiBaseUrl = "https://petstore.swagger.io/v2",
+        OpenApiUrl = "https://petstore.swagger.io/v2/swagger.json",
+        ToolPrefix = "petstore_",
+        UpstreamAuth = UpstreamAuth.None()
+    });
+});
+var app = builder.Build();
+app.MapMcpifyEndpoint();  // or use the Stdio transport directly
+app.Run();
+```
+
+This works in a plain `Microsoft.NET.Sdk` console app — no `FrameworkReference` to ASP.NET Core needed for external-only import.
+
+### 2b. Full Stack: Local Endpoints + MCP Server (ASP.NET Core Host)
+
+To expose your own ASP.NET Core endpoints as tools and host the MCP endpoint:
 
 ```csharp
 using MCPify.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ... Add other services ...
-
-// Add MCPify services
 builder.Services.AddMcpify(options =>
 {
-    // Stdio for local tools (Claude Desktop), Http for remote servers
     options.Transport = McpTransportType.Stdio;
 
-    // Option A: Expose Local Endpoints
+    // Expose local ASP.NET Core endpoints as tools
     options.LocalEndpoints = new LocalEndpointsOptions
     {
         Enabled = true,
         ToolPrefix = "myapp_",
-        BaseUrlOverride = "https://localhost:5001",  // Optional: override base URL
-        Filter = op => op.Route.StartsWith("/api"),  // Optional: filter endpoints
+        BaseUrlOverride = "https://localhost:5001",
+        Filter = op => op.Route.StartsWith("/api"),
         UpstreamAuth = UpstreamAuth.ServerManaged(sp =>
             sp.GetRequiredService<OAuthAuthorizationCodeAuthentication>())
     };
 
-    // Option B: Expose External APIs from URL
+    // Also import external APIs
     options.ExternalApis.Add(new ExternalApiOptions
     {
         ApiBaseUrl = "https://petstore.swagger.io/v2",
         OpenApiUrl = "https://petstore.swagger.io/v2/swagger.json",
         ToolPrefix = "petstore_"
-    });
-
-    // Option C: Expose External APIs from Local File
-    options.ExternalApis.Add(new ExternalApiOptions
-    {
-        ApiBaseUrl = "https://api.example.com",
-        OpenApiFilePath = "path/to/openapi-spec.json",  // or .yaml
-        ToolPrefix = "myapi_"
     });
 });
 
@@ -663,6 +682,36 @@ A simpler overload accepts a string-returning handler. Tools registered this way
 ## Security
 
 See [docs/SECURITY.md](docs/SECURITY.md) for the full threat model covering authentication layers, pass-through token safety, SSRF protection, token storage, and hosted deployment checklist.
+
+## Tool Invocation Policies
+
+Register custom policies (rate limiting, allowlists, audit logging) via DI. Policies are evaluated before every tool call — return a `CallToolResult` to deny, or `null` to allow.
+
+```csharp
+builder.Services.AddSingleton<IToolInvocationPolicy>(new RateLimitPolicy(maxCalls: 100, TimeSpan.FromMinutes(1)));
+builder.Services.AddSingleton<IToolInvocationPolicy>(new ToolAllowlistPolicy(new[] { "api_get_status", "petstore_getPetById" }));
+builder.Services.AddSingleton<IToolInvocationPolicy>(new AuditLogPolicy());
+```
+
+Built-in policies in `MCPify.Core.Policies`:
+- `RateLimitPolicy` — max calls per session per time window
+- `ToolAllowlistPolicy` — only permit specified tool names
+- `AuditLogPolicy` — log every invocation
+
+Implement `IToolInvocationPolicy` for custom policies (per-client quotas, IP-based rules, etc.).
+
+## Observability
+
+MCPify emits `System.Diagnostics.Metrics` for OpenTelemetry integration:
+
+- `mcpify.tool_calls` (counter) — tags: `tool`, `status`
+- `mcpify.tool_duration_ms` (histogram) — tags: `tool`
+
+Structured logging: `MCPify.ToolInvocation` logger records tool name, session hash, status (`ok`/`error`/`scope_denied`/`policy_denied`/`exception`), and elapsed milliseconds. Session IDs are hashed — token values are never logged.
+
+## Comparison
+
+See [docs/COMPARISON.md](docs/COMPARISON.md) for an honest comparison of MCPify vs raw MCP SDK, CLI converters, and FastMCP.
 
 ## Contributing
 

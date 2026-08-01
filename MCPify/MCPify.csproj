@@ -13,8 +13,11 @@
     <Description>Turn any ASP.NET Core API or OpenAPI spec into a Model Context Protocol (MCP) server. Seamlessly integrates with Claude Desktop and other MCP clients.</Description>
     <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
     <RepositoryUrl>https://github.com/abdebek/MCPify</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
   </PropertyGroup>
 

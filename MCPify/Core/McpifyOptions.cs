@@ -172,6 +172,11 @@ public class LocalEndpointsOptions
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// Optional name for this tool source. Used in logs and metrics.
+    /// </summary>
+    public string? ApiName { get; set; }
+
+    /// <summary>
     /// An optional prefix to prepend to the names of generated tools.
     /// </summary>
     public string? ToolPrefix { get; set; }
@@ -241,6 +246,12 @@ public class ExternalApiOptions
     /// The base URL of the API to invoke.
     /// </summary>
     public required string ApiBaseUrl { get; set; }
+
+    /// <summary>
+    /// Optional name identifying this API source. Used in logs, metrics, and policy context.
+    /// Defaults to the host portion of <see cref="ApiBaseUrl"/>.
+    /// </summary>
+    public string? ApiName { get; set; }
 
     /// <summary>
     /// An optional prefix to prepend to the names of generated tools for this API.

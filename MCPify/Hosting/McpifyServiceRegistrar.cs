@@ -171,7 +171,7 @@ public class McpifyServiceRegistrar
                     count++;
                 }
 
-                _logger.LogInformation("[MCPify] Successfully registered {Count} tools from {Source}.", count, source);
+                _logger.LogInformation("[MCPify] Registered {Count} tools from {ApiName} ({Source}).", count, apiOptions.ApiName ?? source, source);
             }
             catch (Exception ex)
             {

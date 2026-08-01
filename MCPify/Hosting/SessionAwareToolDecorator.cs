@@ -105,6 +105,14 @@ public class SessionAwareToolDecorator : McpServerTool
                 return scopeError;
             }
 
+            // Evaluate tool invocation policies (rate limit, allowlist, audit)
+            var policyResult = await TryEvaluatePoliciesAsync(services, _innerTool.ProtocolTool.Name, sessionId, context, token);
+            if (policyResult != null)
+            {
+                LogToolCall(services, _innerTool.ProtocolTool.Name, sessionId, "policy_denied", 0, null);
+                return policyResult;
+            }
+
             var sw = Stopwatch.StartNew();
             try
             {
@@ -210,6 +218,28 @@ public class SessionAwareToolDecorator : McpServerTool
     private static readonly Meter s_meter = new("MCPify", "1.0");
     private static readonly Counter<long> s_toolCalls = s_meter.CreateCounter<long>("mcpify.tool_calls");
     private static readonly Histogram<double> s_toolDuration = s_meter.CreateHistogram<double>("mcpify.tool_duration_ms");
+
+    private static async Task<CallToolResult?> TryEvaluatePoliciesAsync(
+        IServiceProvider services,
+        string toolName,
+        string? sessionId,
+        RequestContext<CallToolRequestParams> context,
+        CancellationToken token)
+    {
+        var policies = services.GetService<IEnumerable<IToolInvocationPolicy>>()?.ToList();
+        if (policies is null or { Count: 0 }) return null;
+
+        var clientId = context.Server?.SessionId;
+        var args = (IReadOnlyDictionary<string, JsonElement>?)context.Params?.Arguments;
+
+        var ctx = new ToolInvocationContext(toolName, sessionId, clientId, args, services);
+        foreach (var policy in policies)
+        {
+            var result = await policy.EvaluateAsync(ctx, token);
+            if (result != null) return result;
+        }
+        return null;
+    }
 
     private static void LogToolCall(IServiceProvider services, string toolName, string? sessionId, string status, long elapsedMs, string? error)
     {
