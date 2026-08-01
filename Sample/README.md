@@ -1,6 +1,22 @@
 # MCPify Sample Application
 
-This sample exposes local ASP.NET Core endpoints and OpenAPI specs as MCP tools, with OAuth login handled by MCPify.
+A reference implementation showing correct MCPify integration: local endpoints, external OpenAPI import, OAuth login, and both HTTP/Stdio transports.
+
+## Architecture
+
+The Sample demonstrates the three-concern auth composition:
+
+1. **MCP Challenge & PRM** — `McpAuthenticationHandler` (from SDK) issues `WWW-Authenticate` challenges pointing to `/.well-known/oauth-protected-resource`. Registered as `DefaultChallengeScheme` via `PostConfigure`.
+
+2. **Inbound token validation** — OpenIddict validates access tokens. Registered as `DefaultAuthenticateScheme` so the MCP route's `RequireAuthorization()` validates tokens through OpenIddict, not the MCP handler.
+
+3. **Per-tool scope enforcement** — `ScopeRequirement` metadata on protected tools, enforced by `SessionAwareToolDecorator` via `IAuthorizationService` (fail-closed).
+
+The `PostConfigure<AuthenticationOptions>` in `DemoServiceExtensions.cs` sets this up:
+- `DefaultAuthenticateScheme = OpenIddict` — validates inbound tokens
+- `DefaultChallengeScheme = McpAuth` — issues MCP-protocol challenges
+
+This is the recommended pattern for production hosts with a real IdP.
 
 ## What You Get
 
@@ -89,13 +105,27 @@ For manual registration, use:
 
 ## Claude Desktop (Stdio)
 
-For local desktop use, publish and run with Stdio:
+The Sample supports Stdio transport for local desktop integration. In Stdio mode, logs are suppressed (stdout is reserved for MCP JSON-RPC).
+
+### Option A: Published executable (recommended)
 
 ```bash
 dotnet publish Sample/MCPify.Sample.csproj -c Release -f net10.0
 ```
 
-Example Claude config:
+Claude config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "mcpify-sample": {
+      "command": "<abs-path>/Sample/bin/Release/net10.0/publish/MCPify.Sample.dll"
+    }
+  }
+}
+```
+
+### Option B: dotnet run (debugging only)
 
 ```json
 {
@@ -103,12 +133,26 @@ Example Claude config:
     "mcpify-sample": {
       "command": "dotnet",
       "args": [
-        "<abs-path>/Sample/bin/Release/net10.0/publish/MCPify.Sample.dll"
+        "run",
+        "--project",
+        "<abs-path>/Sample/MCPify.Sample.csproj",
+        "--",
+        "--Mcpify:Transport=Stdio"
       ]
     }
   }
 }
 ```
+
+> **Warning:** `dotnet run` prints build logs to stdout which corrupts the MCP protocol. Use `--debug` flag or publish the app instead.
+
+### Stdio auth flow
+
+In Stdio mode, the Sample uses `UpstreamAuth.Fallback(PassThrough(), ServerManaged())`:
+1. If the MCP client provides a bearer token, it's forwarded to local endpoints.
+2. If not, the `login_auth_code_pkce` tool initiates a browser-based OAuth flow.
+3. The login tool opens the system browser to `https://localhost:5001/connect/authorize`.
+4. After login, the callback stores the token and the tool call succeeds on retry.
 
 ## Troubleshooting
 
