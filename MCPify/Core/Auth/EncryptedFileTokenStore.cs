@@ -159,6 +159,8 @@ public class EncryptedFileTokenStore : ISecureTokenStore
 
         private byte[] GetOrCreateKey()
         {
+            // Non-Windows without an explicit key: persist a random key file so tokens
+            // survive process restarts. This is the primary path for Linux/macOS.
             if (!OperatingSystem.IsWindows() && string.IsNullOrWhiteSpace(_encryptionKey))
             {
                 var keyFile = Path.Combine(_basePath, KeyFileName);
@@ -175,6 +177,8 @@ public class EncryptedFileTokenStore : ISecureTokenStore
                 return keyBytes;
             }
 
+            // Windows uses ProtectedData (DPAPI) and never reaches here.
+            // Non-Windows with an explicit key: derive from the key material.
             var keyMaterial = _encryptionKey ?? string.Empty;
             if (string.IsNullOrWhiteSpace(keyMaterial))
             {
@@ -183,8 +187,10 @@ public class EncryptedFileTokenStore : ISecureTokenStore
 
             if (string.IsNullOrWhiteSpace(keyMaterial))
             {
-                // Last-resort: generate ephemeral key per process
-                return RandomNumberGenerator.GetBytes(32);
+                throw new InvalidOperationException(
+                    "No encryption key available for EncryptedFileTokenStore. " +
+                    "On Windows, DPAPI is used automatically. On Linux/macOS, a key file is auto-generated. " +
+                    "If you see this error, set the MCPIFY_TOKENSTORE_KEY environment variable or pass an encryptionKey to the constructor.");
             }
 
             using var sha = SHA256.Create();

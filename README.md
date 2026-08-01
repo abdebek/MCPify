@@ -504,6 +504,27 @@ The resource parameter is added to:
 -   Token exchange requests (`POST /token` with `resource=...`)
 -   Token refresh requests
 
+### Route Protection
+
+When `OAuthConfigurations` are present, MCPify automatically applies `RequireAuthorization` to the MCP route using the MCP authentication scheme. If you use JWT-only authentication (no OAuth configurations), you must apply your own authorization to the MCP route:
+
+```csharp
+app.MapMcpifyEndpoint("/mcp")
+   .RequireAuthorization("YourJwtPolicy");
+```
+
+Per-tool scope enforcement is handled by `SessionAwareToolDecorator` via `ScopeRequirement` metadata on each tool. This works for both HTTP and Stdio transports. For HTTP, scopes are evaluated against `HttpContext.User` claims; for Stdio, scopes are extracted from the JWT access token in the MCP context. Ensure `services.AddAuthorization()` is called to enable scope enforcement.
+
+### Auth Composition (Three Concerns)
+
+MCPify's authentication has three distinct layers:
+
+1. **MCP Challenge & Protected Resource Metadata** — handled by the official `McpAuthenticationHandler` from the MCP SDK. Issues `WWW-Authenticate` challenges pointing to `/.well-known/oauth-protected-resource`.
+
+2. **Inbound JWT Validation** — the host application's responsibility. Use standard ASP.NET Core `AddAuthentication().AddJwtBearer(...)` to validate tokens (expiration, audience, issuer). MCPify does not ship its own JWT validator.
+
+3. **Per-Tool Scope Enforcement** — MCPify's `ScopeRequirementHandler` evaluates `ScopeRequirement` metadata on each tool via `IAuthorizationService`. Requires `services.AddAuthorization()` to be registered.
+
 ## Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.

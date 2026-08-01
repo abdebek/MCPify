@@ -168,7 +168,7 @@ public class TokenExchangeAuthenticationTests
     }
 
     [Fact]
-    public async Task ExchangeTokenAsync_ReturnsNull_OnHttpError()
+    public async Task ExchangeTokenAsync_Throws_OnHttpError()
     {
         var httpClient = CreateHttpClient(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
         {
@@ -176,13 +176,13 @@ public class TokenExchangeAuthenticationTests
         });
         var auth = CreateAuth(httpClient);
 
-        var result = await auth.ExchangeTokenAsync("bad-token", CancellationToken.None);
-
-        Assert.Null(result);
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            auth.ExchangeTokenAsync("bad-token", CancellationToken.None));
+        Assert.Contains("Token exchange failed", ex.Message);
     }
 
     [Fact]
-    public async Task ExchangeTokenAsync_ReturnsNull_OnMissingAccessToken()
+    public async Task ExchangeTokenAsync_Throws_OnMissingAccessToken()
     {
         var httpClient = CreateHttpClient(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
@@ -190,9 +190,8 @@ public class TokenExchangeAuthenticationTests
         });
         var auth = CreateAuth(httpClient);
 
-        var result = await auth.ExchangeTokenAsync("subject-token", CancellationToken.None);
-
-        Assert.Null(result);
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            auth.ExchangeTokenAsync("subject-token", CancellationToken.None));
     }
 
     [Fact]

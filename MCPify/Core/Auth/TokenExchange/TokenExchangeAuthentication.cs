@@ -132,7 +132,9 @@ public class TokenExchangeAuthentication : IAuthenticationProvider
 
         if (!response.IsSuccessStatusCode)
         {
-            return null;
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"Token exchange failed at '{_tokenEndpoint}': HTTP {(int)response.StatusCode} {response.ReasonPhrase}. Response: {errorBody}");
         }
 
         var json = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -141,13 +143,13 @@ public class TokenExchangeAuthentication : IAuthenticationProvider
 
         if (!root.TryGetProperty("access_token", out var accessTokenProp))
         {
-            return null;
+            throw new InvalidOperationException("Token exchange response did not contain 'access_token'.");
         }
 
         var accessToken = accessTokenProp.GetString();
         if (string.IsNullOrEmpty(accessToken))
         {
-            return null;
+            throw new InvalidOperationException("Token exchange response contained an empty 'access_token'.");
         }
 
         DateTimeOffset? expiresAt = null;

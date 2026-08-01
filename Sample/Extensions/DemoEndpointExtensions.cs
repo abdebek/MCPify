@@ -31,10 +31,4 @@ public static class DemoEndpointExtensions
 
         return app;
     }
-
-    public static async Task RegisterDemoMcpToolsAsync(this WebApplication app)
-    {
-        var registrar = app.Services.GetRequiredService<McpifyServiceRegistrar>();
-        await registrar.RegisterToolsAsync(((IEndpointRouteBuilder)app).DataSources);
-    }
 }

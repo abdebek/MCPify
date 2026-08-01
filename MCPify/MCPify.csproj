@@ -8,7 +8,7 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>MCPify</PackageId>
-    <Version>1.0.0-rc.1</Version>
+    <Version>0.0.15-preview</Version>
     <Authors>Abdullah D.</Authors>
     <Description>Turn any ASP.NET Core API or OpenAPI spec into a Model Context Protocol (MCP) server. Seamlessly integrates with Claude Desktop and other MCP clients.</Description>
     <PackageTags>mcp;openapi;swagger;api;tools</PackageTags>
@@ -32,7 +32,7 @@
 
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.0.0" />
-    <PackageReference Include="Microsoft.OpenApi.Readers" Version="*" />
+    <PackageReference Include="Microsoft.OpenApi.Readers" Version="1.6.29" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
