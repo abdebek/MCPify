@@ -41,13 +41,12 @@ internal static class UpstreamAuthTransportPolicy
                 hosts.Add(host);
         }
 
-        if (hosts.Count >= 2 && !options.AllowMultiHostPassThrough)
+        if (hosts.Count >= 2)
         {
             throw new InvalidOperationException(
                 $"PassThrough is configured for {hosts.Count} distinct ExternalApi hosts ({string.Join(", ", hosts)}). " +
-                "The same MCP client token would be forwarded to all of them — this is unsafe when APIs have different audiences. " +
-                "Set McpifyOptions.AllowMultiHostPassThrough = true only if they share the same token audience, " +
-                "or use ServerManaged/TokenExchange with distinct provider names per API.");
+                "The same MCP client token would be forwarded to all of them. " +
+                "Use ServerManaged or TokenExchange with distinct provider names per API instead.");
         }
     }
 

@@ -78,12 +78,6 @@ public class McpifyOptions
     public bool AllowClientTokenPassthrough { get; set; }
 
     /// <summary>
-    /// When true, allows PassThrough UpstreamAuth for multiple ExternalApi hosts with distinct
-    /// audiences. Defaults to false (fail-fast) — set true only if all hosts share the same token audience.
-    /// </summary>
-    public bool AllowMultiHostPassThrough { get; set; }
-
-    /// <summary>
     /// Controls how the login tool handles browser launching for OAuth authentication.
     /// Set to <see cref="BrowserLaunchBehavior.Never"/> for headless/remote environments to avoid
     /// unnecessary timeouts waiting for browser launch to fail.

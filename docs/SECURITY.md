@@ -134,11 +134,10 @@ new OAuthAuthorizationCodeAuthentication(
 
 ### Pass-Through Cross-Audience Risk
 
-`UpstreamAuth.PassThrough()` sends the inbound MCP client token to the upstream API. If multiple tools with different `ApiBaseUrl` values use pass-through, the same token goes to all of them. This is intentional but risky:
+`UpstreamAuth.PassThrough()` sends the inbound MCP client token to the upstream API. If multiple tools with different `ApiBaseUrl` hosts use pass-through, the same token goes to all of them. **This is blocked at startup** — MCPify throws if PassThrough is configured for more than one distinct host. Use `ServerManaged` or `TokenExchange` per API instead.
 
-- Only use pass-through when all upstream APIs accept the same token audience
-- Prefer `UpstreamAuth.ServerManaged(...)` with distinct OAuth clients / `providerName`s per API
-- On multi-user HTTP hosts, never use pass-through without explicit opt-in
+- Pass-through to a single host is allowed (with `AllowClientTokenPassthrough = true` on HTTP)
+- Pass-through to multiple hosts is always blocked — no opt-in
 - At startup, MCPify **logs a warning** when two or more `ExternalApiOptions` with **different hosts** use PassThrough (including inside `Fallback`)
 
 ### `allowDefaultSessionFallback`

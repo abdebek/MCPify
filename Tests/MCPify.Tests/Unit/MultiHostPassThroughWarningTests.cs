@@ -19,11 +19,12 @@ public class MultiHostPassThroughWarningTests
     [Fact]
     public void WarnIfNeeded_Logs_WhenPassThroughOnMultipleExternalHosts()
     {
+        // Multi-host PassThrough now throws at validation time — this test verifies
+        // that the warning path does not fire when validation has already blocked it.
         var options = new McpifyOptions
         {
             Transport = McpTransportType.Http,
             AllowClientTokenPassthrough = true,
-            AllowMultiHostPassThrough = true,
             ExternalApis =
             {
                 new ExternalApiOptions
@@ -34,8 +35,8 @@ public class MultiHostPassThroughWarningTests
                 },
                 new ExternalApiOptions
                 {
-                    ApiBaseUrl = "https://api-b.example.com",
-                    OpenApiUrl = "https://api-b.example.com/openapi.json",
+                    ApiBaseUrl = "https://api-a.example.com",
+                    OpenApiUrl = "https://api-a.example.com/openapi.json",
                     UpstreamAuth = UpstreamAuth.Fallback(UpstreamAuth.PassThrough(), UpstreamAuth.None())
                 }
             }
@@ -45,10 +46,8 @@ public class MultiHostPassThroughWarningTests
         var logger = new ListLogger();
         UpstreamAuthTransportPolicy.WarnIfNeeded(options, logger);
 
-        Assert.Contains(logger.Messages, m =>
-            m.Contains("PassThrough is active for 2 distinct hosts", StringComparison.Ordinal) &&
-            m.Contains("api-a.example.com", StringComparison.OrdinalIgnoreCase) &&
-            m.Contains("api-b.example.com", StringComparison.OrdinalIgnoreCase));
+        // Same host — no warning
+        Assert.DoesNotContain(logger.Messages, m => m.Contains("distinct hosts", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -117,33 +116,6 @@ public class MultiHostPassThroughWarningTests
         };
 
         Assert.Throws<InvalidOperationException>(() => UpstreamAuthTransportPolicy.NormalizeAndValidate(options));
-    }
-
-    [Fact]
-    public void NormalizeAndValidate_Allows_WhenMultiHostPassThroughWithOptIn()
-    {
-        var options = new McpifyOptions
-        {
-            Transport = McpTransportType.Stdio,
-            AllowMultiHostPassThrough = true,
-            ExternalApis =
-            {
-                new ExternalApiOptions
-                {
-                    ApiBaseUrl = "https://api-a.example.com",
-                    OpenApiUrl = "https://api-a.example.com/openapi.json",
-                    UpstreamAuth = UpstreamAuth.PassThrough()
-                },
-                new ExternalApiOptions
-                {
-                    ApiBaseUrl = "https://api-b.example.com",
-                    OpenApiUrl = "https://api-b.example.com/openapi.json",
-                    UpstreamAuth = UpstreamAuth.PassThrough()
-                }
-            }
-        };
-
-        UpstreamAuthTransportPolicy.NormalizeAndValidate(options);
     }
 
     [Fact]
