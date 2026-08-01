@@ -23,11 +23,6 @@ builder.Services.Configure<DemoOptions>(builder.Configuration.GetSection("Demo")
 var demoOptions = builder.Configuration.GetSection("Demo").Get<DemoOptions>() ?? new DemoOptions();
 
 var baseUrl = demoOptions.BaseUrl.TrimEnd('/');
-// Ensure we use the HTTPS url from launchSettings if BaseUrl is not explicitly set in config to something else
-if (baseUrl == "https://localhost:5001" || baseUrl == "http://localhost:5000")
-{
-    // No-op, just confirming default
-}
 
 var oauthRedirectPath = "/auth/callback"; 
 var oauthRedirectUri = $"{baseUrl}{oauthRedirectPath}"; 
@@ -45,7 +40,7 @@ builder.Services.AddControllers();
 var app = builder.Build();
 
 // --- Pipeline ---
-app.UseCors("AllowAll");
+app.UseCors("DemoCors");
 
 app.UseSwagger();
 app.UseSwaggerUI();

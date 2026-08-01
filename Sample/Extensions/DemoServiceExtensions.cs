@@ -74,9 +74,11 @@ public static class DemoServiceExtensions
 
         services.AddCors(options =>
         {
-            options.AddPolicy("AllowAll", builder =>
+            options.AddPolicy("DemoCors", builder =>
             {
-                builder.AllowAnyOrigin()
+                builder.SetIsOriginAllowed(origin =>
+                        origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase) ||
+                        origin.StartsWith("https://localhost", StringComparison.OrdinalIgnoreCase))
                     .AllowAnyMethod()
                     .AllowAnyHeader();
             });
