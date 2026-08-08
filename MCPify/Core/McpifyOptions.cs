@@ -2,6 +2,7 @@ using MCPify.Core.Auth;
 using MCPify.OpenApi;
 using MCPify.Schema;
 using Microsoft.AspNetCore.Http;
+using ModelContextProtocol.AspNetCore;
 
 namespace MCPify.Core;
 
@@ -11,10 +12,27 @@ namespace MCPify.Core;
 public class McpifyOptions
 {
     /// <summary>
-    /// Custom delegate to resolve the Session ID from the current HttpContext.
-    /// If not provided, or returns null, defaults to HttpContext.Items["McpSessionId"] or Constants.DefaultSessionId.
+    /// Custom delegate to resolve an application-level session id from the current <see cref="HttpContext"/>.
+    /// Used when the MCP HTTP transport is stateless (SDK 2.x default) and <c>McpServer.SessionId</c> is null.
+    /// Resolution order in <c>SessionAwareToolDecorator</c>: transport session id → tool argument
+    /// <c>sessionId</c> → this resolver → <c>HttpContext.Items["McpSessionId"]</c> → stdio default-session bridge.
     /// </summary>
     public Func<HttpContext, string?>? SessionIdResolver { get; set; }
+
+    /// <summary>
+    /// When set, configures MCP Streamable HTTP <see cref="HttpServerTransportOptions.Stateless"/>.
+    /// SDK 2.x defaults to <c>true</c> (stateless / load-balancer friendly; no <c>Mcp-Session-Id</c>).
+    /// Set to <c>false</c> only when you need transport-level sessions (legacy clients, server-push, or
+    /// code that relies on <c>McpServer.SessionId</c>). Server-managed OAuth token storage should use
+    /// an app-level handle via <see cref="SessionIdResolver"/> or a <c>sessionId</c> tool argument
+    /// rather than transport sessions when staying stateless.
+    /// </summary>
+    public bool? HttpStateless { get; set; }
+
+    /// <summary>
+    /// Optional extra configuration for the MCP HTTP transport. Invoked after <see cref="HttpStateless"/> is applied.
+    /// </summary>
+    public Action<HttpServerTransportOptions>? ConfigureHttpTransport { get; set; }
 
     /// <summary>
     /// Configuration for exposing local ASP.NET Core endpoints as MCP tools.

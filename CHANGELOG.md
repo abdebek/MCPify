@@ -3,6 +3,25 @@
 All notable changes to MCPify are documented here.
 This project follows [Semantic Versioning](https://semver.org/) with a `*-preview` suffix while on the preview line.
 
+## [0.0.16-preview] — 2026-08-08
+
+### Changed
+
+- **MCP SDK upgraded to 2.1.0** (from 2.0.0). Includes HTTP transport reliability fixes and `subscriptions/listen` support from the official C# SDK.
+- **HTTP transport is explicitly configured** via `WithHttpTransport`. SDK 2.x defaults to **stateless** Streamable HTTP (`HttpServerTransportOptions.Stateless = true`), which is the forward-compatible path for the [2026-07-28 MCP revision](https://modelcontextprotocol.io/specification/2026-07-28).
+
+### Added
+
+- **`McpifyOptions.HttpStateless`** — optional override for SDK stateless mode. Set `false` only when you need transport-level sessions (`McpServer.SessionId`, legacy session affinity).
+- **`McpifyOptions.ConfigureHttpTransport`** — hook for idle timeout, event stores, and other `HttpServerTransportOptions`.
+- **`SessionIdResolver` is now wired** in `SessionAwareToolDecorator` (was documented but unused). Under stateless HTTP, resolve an app-level session handle from `HttpContext` (or `HttpContext.Items["McpSessionId"]`) so server-managed token storage still works without `Mcp-Session-Id`.
+
+### Migration notes
+
+1. No action required for most hosts: existing `WithHttpTransport()` behavior already followed the SDK default (stateless).
+2. If your host depended on a non-null `McpServer.SessionId` for multi-turn ServerManaged OAuth, either set `HttpStateless = false` or supply a stable handle via `SessionIdResolver` / tool argument `sessionId`.
+3. Prefer `UpstreamAuth.PassThrough()` on multi-user HTTP hosts; keep ServerManaged + encrypted token store for Stdio / single-user.
+
 ## [0.0.15-preview] — 2026-08-01
 
 ### Breaking Changes (since 0.0.14-preview)

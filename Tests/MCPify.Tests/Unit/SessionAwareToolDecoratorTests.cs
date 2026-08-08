@@ -71,6 +71,75 @@ public class SessionAwareToolDecoratorTests
     }
 
     [Fact]
+    public async Task InvokeAsync_UsesSessionIdResolver_WhenTransportSessionMissing()
+    {
+        // Stateless HTTP (SDK 2.x default): no McpServer.SessionId — app-level handle via resolver.
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContext = new DefaultHttpContext();
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = httpContext };
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Http,
+            SessionIdResolver = ctx => "app-session-from-resolver"
+        });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, null), CancellationToken.None);
+
+        Assert.Equal("app-session-from-resolver|(null)", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_UsesHttpContextItemsMcpSessionId_WhenResolverAbsent()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContext = new DefaultHttpContext();
+        httpContext.Items["McpSessionId"] = "items-session";
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = httpContext };
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+        services.AddSingleton(new McpifyOptions { Transport = McpTransportType.Http });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, null), CancellationToken.None);
+
+        Assert.Equal("items-session|(null)", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_PrefersArgumentSessionId_OverResolver()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Http,
+            SessionIdResolver = _ => "from-resolver"
+        });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "from-arg"), CancellationToken.None);
+
+        Assert.Equal("from-arg|(null)", ReadText(result));
+    }
+
+    [Fact]
     public async Task InvokeAsync_EnforcesScopeRequirement_WhenScopePresent()
     {
         var services = new ServiceCollection();

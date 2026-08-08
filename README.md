@@ -10,18 +10,23 @@ Two modes:
 - **External API import** — pass an OpenAPI URL or file path + base URL. No ASP.NET Core host required; works in any .NET app via `AddMcpifyCore()`.
 - **Local endpoint proxy + MCP server** — expose your own ASP.NET Core routes as tools and host the MCP endpoint. Requires an ASP.NET Core host via `AddMcpify()`.
 
-> **Latest Release:** v0.0.15-preview - SDK 2.0, honesty/auth composition baseline, Playwright smokes (still preview)
+> **Latest Release:** v0.0.16-preview — MCP C# SDK 2.1, stateless-first HTTP, app-level session handles
 
 ## What's New
 
-### v0.0.15-preview (Latest)
+### v0.0.16-preview (Latest)
+-   **MCP C# SDK 2.1.0** ([announcement](https://devblogs.microsoft.com/dotnet/announcing-v20-of-the-official-mcp-csharp-sdk/)) — Streamable HTTP, stateless by default, 2026-07-28 protocol
+-   **`HttpStateless` / `ConfigureHttpTransport`** — explicit control over SDK HTTP transport options
+-   **`SessionIdResolver` wired** for app-level session handles when transport sessions are absent (stateless mode)
+-   Prefer PassThrough JWT on multi-user HTTP; ServerManaged tokens remain ideal for Stdio / single-user
+
+### v0.0.15-preview
 -   **MCP SDK 2.0.0** with Streamable HTTP labeling and `AddAuthorizationFilters`
 -   **Auth honesty**: host JWT ownership, required `stateSecret`, PKCE default on, no unvalidated `sub` rekey, no default-scheme hijack
 -   **Single registration path**: `MapMcpifyEndpoint` registers local + external tools
 -   **SSRF guard**, scope fail-closed enforcement, TokenExchange error handling
 -   **Playwright** Sample smoke tests (OAuth + MCP HTTP)
 -   **Tool curation**: global + per-API cardinality caps, declarative `ToolFilter` (allow/deny by path, method, tag, operationId), improved schema quality (`additionalProperties`, nullable, defaults, `oneOf`/`anyOf`/`allOf`)
--   Stay on this preview line while building tool curation and further roadmap items (next free NuGet id after `0.0.14-preview`)
 
 ### v0.0.14-preview
 -   **UpstreamAuth Abstraction**: Replaces the rigid `TokenSource` enum with an extensible class offering static factory methods: `PassThrough()`, `None()`, `ServerManaged()`, `TokenExchange()`, `Fallback()`, and `Custom()`
@@ -66,6 +71,7 @@ Two modes:
     -   Per-tool scope requirements via `ScopeRequirement` metadata
     -   > **Note:** Inbound JWT token validation (expiration, audience, scope enforcement) is the host application's responsibility via standard ASP.NET Core `AddJwtBearer`. MCPify does not ship its own JWT validator. Scope enforcement via `ScopeRequirementHandler` requires `AddAuthorization` policies/filters to be wired by the host.
 -   **Dual Transport**: Supports both `Stdio` (for local desktop apps like Claude) and `Http` (Streamable HTTP) transports.
+-   **Stateless-first HTTP**: Aligns with MCP C# SDK 2.x / 2026-07-28 — scale out without sticky sessions; app-level session handles via `SessionIdResolver` when needed.
 -   **Production Ready**: Robust logging, error handling, and configurable options.
 
 ## Supported Frameworks
@@ -79,10 +85,10 @@ Two modes:
 Install the package into your project:
 
 ```bash
-dotnet add package MCPify --version 0.0.15-preview
+dotnet add package MCPify --version 0.0.16-preview
 ```
 
-> **Preview notice:** MCPify is on the `0.0.x-preview` line. Breaking changes may occur between preview releases. Pin an exact version (e.g. `0.0.15-preview`) rather than a floating range to avoid surprises. A `0.1.0-preview` soft-freeze is planned once tool curation and local-tool DX are feature-complete.
+> **Preview notice:** MCPify is on the `0.0.x-preview` line. Breaking changes may occur between preview releases. Pin an exact version (e.g. `0.0.16-preview`) rather than a floating range to avoid surprises. A `0.1.0-preview` soft-freeze is planned once tool curation and local-tool DX are feature-complete.
 
 ### 2a. External APIs Only (No ASP.NET Core Host)
 
@@ -583,6 +589,31 @@ app.MapMcpifyEndpoint("/mcp")
 ```
 
 Per-tool scope enforcement is handled by `SessionAwareToolDecorator` via `ScopeRequirement` metadata on each tool. This works for both HTTP and Stdio transports. For HTTP, scopes are evaluated against `HttpContext.User` claims; for Stdio, scopes are extracted from the JWT access token in the MCP context. Ensure `services.AddAuthorization()` is called to enable scope enforcement.
+
+### Stateless HTTP and session handles (SDK 2.x)
+
+MCP C# SDK 2.x runs Streamable HTTP **stateless by default** (no `Mcp-Session-Id`, any instance can handle any request). That is the recommended path for multi-instance hosts.
+
+When `McpServer.SessionId` is null, MCPify resolves an **app-level** session handle in this order:
+
+1. Tool argument `sessionId` (if present)
+2. `McpifyOptions.SessionIdResolver(HttpContext)`
+3. `HttpContext.Items["McpSessionId"]`
+4. Stdio default-session bridge (Stdio only)
+
+```csharp
+builder.Services.AddMcpify(options =>
+{
+    // Optional: opt into transport sessions only if you truly need them
+    // options.HttpStateless = false;
+
+    // Preferred for ServerManaged tokens under stateless HTTP:
+    options.SessionIdResolver = ctx =>
+        ctx.User.FindFirst("sub")?.Value;
+});
+```
+
+For multi-user HTTP hosts, prefer `UpstreamAuth.PassThrough()` so the MCP client's JWT is forwarded and no server-side token store is keyed by session.
 
 ### Auth Composition (Three Concerns)
 

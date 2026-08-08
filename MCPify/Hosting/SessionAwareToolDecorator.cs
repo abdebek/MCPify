@@ -55,9 +55,14 @@ public class SessionAwareToolDecorator : McpServerTool
 
         try
         {
-            var sessionId = context.Server?.SessionId;
             var options = services.GetService<McpifyOptions>();
             var sessionMap = services.GetService<ISessionMap>();
+            var httpContextAccessor = services.GetService<IHttpContextAccessor>();
+            var httpContext = httpContextAccessor?.HttpContext;
+
+            // SDK 2.x HTTP is stateless by default — Server.SessionId is often null.
+            // Prefer transport session when present, then tool args, then host-provided app-level handles.
+            var sessionId = context.Server?.SessionId;
 
             if (string.IsNullOrEmpty(sessionId) && context.Params?.Arguments != null)
             {
@@ -72,6 +77,22 @@ public class SessionAwareToolDecorator : McpServerTool
                     {
                         sessionId = argEntry.Value.ToString();
                     }
+                }
+            }
+
+            if (string.IsNullOrEmpty(sessionId) && httpContext != null)
+            {
+                if (options?.SessionIdResolver != null)
+                {
+                    sessionId = options.SessionIdResolver(httpContext);
+                }
+
+                if (string.IsNullOrEmpty(sessionId) &&
+                    httpContext.Items.TryGetValue("McpSessionId", out var item) &&
+                    item is string itemSession &&
+                    !string.IsNullOrEmpty(itemSession))
+                {
+                    sessionId = itemSession;
                 }
             }
 
@@ -93,8 +114,7 @@ public class SessionAwareToolDecorator : McpServerTool
 
             accessor.SessionId = sessionId;
 
-            var httpContextAccessor = services.GetService<IHttpContextAccessor>();
-            var authHeader = httpContextAccessor?.HttpContext?.Request?.Headers["Authorization"].FirstOrDefault();
+            var authHeader = httpContext?.Request?.Headers["Authorization"].FirstOrDefault();
             accessor.AccessToken = string.IsNullOrEmpty(authHeader) ? null : authHeader;
 
             // Enforce per-tool ScopeRequirement metadata

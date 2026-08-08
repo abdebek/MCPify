@@ -72,7 +72,16 @@ public static class McpifyServiceExtensions
         }
         else
         {
-            serverBuilder.WithHttpTransport();
+            // SDK 2.x defaults Stateless = true (2026-07-28). Hosts may opt into sessions via HttpStateless = false.
+            serverBuilder.WithHttpTransport(httpOpts =>
+            {
+                if (opts.HttpStateless.HasValue)
+                {
+                    httpOpts.Stateless = opts.HttpStateless.Value;
+                }
+
+                opts.ConfigureHttpTransport?.Invoke(httpOpts);
+            });
         }
 
         services.AddHttpContextAccessor();
