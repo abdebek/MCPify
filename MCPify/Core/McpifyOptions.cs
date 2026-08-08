@@ -14,8 +14,13 @@ public class McpifyOptions
     /// <summary>
     /// Custom delegate to resolve an application-level session id from the current <see cref="HttpContext"/>.
     /// Used when the MCP HTTP transport is stateless (SDK 2.x default) and <c>McpServer.SessionId</c> is null.
-    /// Resolution order in <c>SessionAwareToolDecorator</c>: transport session id → tool argument
-    /// <c>sessionId</c> → this resolver → <c>HttpContext.Items["McpSessionId"]</c> → stdio default-session bridge.
+    /// <para>
+    /// On HTTP, resolution is fail-closed for free-form client input: transport session → this resolver →
+    /// <c>HttpContext.Items["McpSessionId"]</c> → authenticated principal subject (<c>sub</c>/<c>oid</c>).
+    /// A tool argument <c>sessionId</c> is accepted only when it matches that host-bound handle; otherwise
+    /// it is ignored (no trusted handle) or rejected (mismatch). Do not use client-chosen ids as the sole
+    /// ServerManaged token-store key on multi-user hosts.
+    /// </para>
     /// </summary>
     public Func<HttpContext, string?>? SessionIdResolver { get; set; }
 

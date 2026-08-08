@@ -159,6 +159,15 @@ public static class DemoServiceExtensions
             options.Transport = transport;
             options.ResourceUrlOverride = baseUrl;
             options.AllowClientTokenPassthrough = allowClientTokenPassthrough;
+            // HTTP fail-closed: bind ServerManaged token-store keys to the authenticated principal,
+            // never free-form client sessionId arguments.
+            if (transport == McpTransportType.Http)
+            {
+                options.SessionIdResolver = ctx =>
+                    ctx.User.FindFirst("sub")?.Value
+                    ?? ctx.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            }
+
             options.OAuthConfigurations.Add(new OAuth2Configuration
             {
                 AuthorizationUrl = $"{baseUrl}/connect/authorize",

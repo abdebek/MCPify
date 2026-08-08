@@ -57,7 +57,11 @@ public class LoginToolTests
         // Always enter the poll loop. LoginBrowserBehavior.Auto on headless CI (no DISPLAY)
         // returns the auth URL immediately without waiting for a token — that is correct product
         // behavior for agents, but this test specifically covers the polling success path.
-        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Always });
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Stdio,
+            LoginBrowserBehavior = BrowserLaunchBehavior.Always
+        });
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
@@ -98,7 +102,11 @@ public class LoginToolTests
         services.AddSingleton<ISecureTokenStore>(tokenStore);
         services.AddSingleton<LoginTool>();
         // Never open browser → return URL immediately (stable on headless CI and local)
-        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Never });
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Stdio,
+            LoginBrowserBehavior = BrowserLaunchBehavior.Never
+        });
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
@@ -120,7 +128,7 @@ public class LoginToolTests
     }
 
     [Fact]
-    public async Task LoginTool_UsesDefaultSessionId_WhenNoSessionIsAvailable()
+    public async Task LoginTool_UsesDefaultSessionId_WhenNoSessionIsAvailable_OnStdio()
     {
         var services = new ServiceCollection();
 
@@ -133,7 +141,11 @@ public class LoginToolTests
         services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
         services.AddSingleton<ISecureTokenStore>(tokenStore);
         services.AddSingleton<LoginTool>();
-        services.AddSingleton(new McpifyOptions { LoginBrowserBehavior = BrowserLaunchBehavior.Never });
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Stdio,
+            LoginBrowserBehavior = BrowserLaunchBehavior.Never
+        });
 
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
@@ -146,6 +158,43 @@ public class LoginToolTests
 
         Assert.Equal(Constants.DefaultSessionId, auth.LastSessionId);
         Assert.Equal(Constants.DefaultSessionId, accessor.SessionId);
+    }
+
+    [Fact]
+    public async Task LoginTool_RejectsHttpLogin_WithoutHostBoundSessionHandle()
+    {
+        var services = new ServiceCollection();
+        var tokenStore = new InMemoryTokenStore();
+        var accessor = new MockMcpContextAccessor { SessionId = null };
+        var auth = new StubOAuthAuthorization(tokenStore, accessor);
+
+        services.AddSingleton(accessor);
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<OAuthAuthorizationCodeAuthentication>(auth);
+        services.AddSingleton<ISecureTokenStore>(tokenStore);
+        services.AddSingleton<LoginTool>();
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Http,
+            LoginBrowserBehavior = BrowserLaunchBehavior.Never
+        });
+
+        var provider = services.BuildServiceProvider();
+        var tool = provider.GetRequiredService<LoginTool>();
+
+        var arguments = new Dictionary<string, JsonElement>
+        {
+            ["sessionId"] = JsonSerializer.SerializeToElement("attacker-chosen")
+        };
+        var callToolParams = new CallToolRequestParams { Name = "login", Arguments = arguments };
+        var context = CreateContext(callToolParams, provider);
+
+        var result = await tool.InvokeAsync(context, CancellationToken.None);
+
+        Assert.True(result.IsError == true);
+        var text = Assert.IsType<TextContentBlock>(Assert.Single(result.Content)).Text;
+        Assert.Contains("host-bound session handle", text);
+        Assert.Null(auth.LastSessionId);
     }
 
     [Fact]
@@ -173,7 +222,10 @@ public class LoginToolTests
         var provider = services.BuildServiceProvider();
         var tool = provider.GetRequiredService<LoginTool>();
 
-        var arguments = new Dictionary<string, JsonElement>();
+        var arguments = new Dictionary<string, JsonElement>
+        {
+            ["sessionId"] = JsonSerializer.SerializeToElement("session-x")
+        };
         var callToolParams = new CallToolRequestParams { Name = "login", Arguments = arguments };
         var context = CreateContext(callToolParams, provider);
 

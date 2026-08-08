@@ -61,57 +61,25 @@ public class SessionAwareToolDecorator : McpServerTool
             var httpContext = httpContextAccessor?.HttpContext;
 
             // SDK 2.x HTTP is stateless by default — Server.SessionId is often null.
-            // Prefer transport session when present, then tool args, then host-provided app-level handles.
-            var sessionId = context.Server?.SessionId;
+            // Free-form client sessionId is not a capability token on HTTP (see SessionHandleResolver).
+            var resolved = SessionHandleResolver.Resolve(
+                options,
+                context.Server?.SessionId,
+                context.Params?.Arguments,
+                httpContext,
+                sessionMap);
 
-            if (string.IsNullOrEmpty(sessionId) && context.Params?.Arguments != null)
+            if (resolved.Error != null)
             {
-                var argEntry = context.Params.Arguments.FirstOrDefault(x => x.Key.Equals("sessionId", StringComparison.OrdinalIgnoreCase));
-                if (!string.IsNullOrEmpty(argEntry.Key))
+                LogToolCall(services, _innerTool.ProtocolTool.Name, null, "session_rejected", 0, null);
+                return new CallToolResult
                 {
-                    if (argEntry.Value.ValueKind == JsonValueKind.String)
-                    {
-                        sessionId = argEntry.Value.GetString();
-                    }
-                    else
-                    {
-                        sessionId = argEntry.Value.ToString();
-                    }
-                }
+                    IsError = true,
+                    Content = new[] { new TextContentBlock { Text = $"Forbidden: {resolved.Error}" } }
+                };
             }
 
-            if (string.IsNullOrEmpty(sessionId) && httpContext != null)
-            {
-                if (options?.SessionIdResolver != null)
-                {
-                    sessionId = options.SessionIdResolver(httpContext);
-                }
-
-                if (string.IsNullOrEmpty(sessionId) &&
-                    httpContext.Items.TryGetValue("McpSessionId", out var item) &&
-                    item is string itemSession &&
-                    !string.IsNullOrEmpty(itemSession))
-                {
-                    sessionId = itemSession;
-                }
-            }
-
-            if (string.IsNullOrEmpty(sessionId) &&
-                options?.Transport == McpTransportType.Stdio &&
-                sessionMap != null)
-            {
-                var bridgedSession = sessionMap.ResolvePrincipal(Constants.DefaultSessionId);
-                if (!string.Equals(bridgedSession, Constants.DefaultSessionId, StringComparison.Ordinal))
-                {
-                    sessionId = bridgedSession;
-                }
-            }
-
-            if (sessionMap != null && !string.IsNullOrEmpty(sessionId))
-            {
-                sessionId = sessionMap.ResolvePrincipal(sessionId);
-            }
-
+            var sessionId = resolved.SessionId;
             accessor.SessionId = sessionId;
 
             var authHeader = httpContext?.Request?.Headers["Authorization"].FirstOrDefault();

@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -214,8 +215,9 @@ public class SampleIntegrationTests : IAsyncLifetime
     [Fact]
     public async Task MCP_ToolCall_ProtectedSecretEndpoint_ReturnsSecretAfterLogin()
     {
-        var sessionId = "itest-protected-call";
-        await PerformOAuthLogin(sessionId);
+        // OAuth still uses a free-form state key during the browser flow; PerformOAuthLogin
+        // dual-writes the token under the JWT sub so HTTP fail-closed resolution can find it.
+        await PerformOAuthLogin("itest-protected-call");
         await InitMcpSession();
 
         var listResponse = await SendMcpRequest("tools/list", new { });
@@ -226,7 +228,8 @@ public class SampleIntegrationTests : IAsyncLifetime
         var secretsTool = toolNames.FirstOrDefault(n => n!.Contains("secret", StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(secretsTool);
 
-        var callResponse = await SendMcpRequest("tools/call", new { name = secretsTool, arguments = new { sessionId } });
+        // No free-form sessionId — host-bound principal (sub) keys ServerManaged tokens on HTTP.
+        var callResponse = await SendMcpRequest("tools/call", new { name = secretsTool, arguments = new { } });
         Assert.True(callResponse.RootElement.TryGetProperty("result", out var callResult));
         Assert.True(callResult.TryGetProperty("content", out var content));
         var text = content.EnumerateArray()
@@ -447,6 +450,47 @@ public class SampleIntegrationTests : IAsyncLifetime
             pageContent.Contains("Login Successful", StringComparison.OrdinalIgnoreCase),
             $"Expected callback. URL: {pageUrl}, Content: {pageContent[..Math.Min(500, pageContent.Length)]}");
         await page.CloseAsync();
+
+        // Dual-write under JWT sub so HTTP SessionIdResolver / principal binding can load tokens
+        // without trusting free-form tool sessionId arguments.
+        await DualWriteTokenUnderJwtSubjectAsync(sessionId);
+    }
+
+    private async Task DualWriteTokenUnderJwtSubjectAsync(string loginSessionId)
+    {
+        var tokenStore = _app!.Services.GetRequiredService<ISecureTokenStore>();
+        var providerName = GetOAuthProviderName();
+        var tokenData = await tokenStore.GetTokenAsync(loginSessionId, providerName, CancellationToken.None);
+        if (tokenData is null || string.IsNullOrEmpty(tokenData.AccessToken))
+        {
+            return;
+        }
+
+        var subject = TryGetJwtSubject(tokenData.AccessToken);
+        if (string.IsNullOrEmpty(subject) ||
+            string.Equals(subject, loginSessionId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await tokenStore.SaveTokenAsync(subject, providerName, tokenData, CancellationToken.None);
+        // Prefer subject for subsequent store lookups used when attaching Bearer tokens.
+        _currentSessionId = subject;
+    }
+
+    private static string? TryGetJwtSubject(string accessToken)
+    {
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(accessToken);
+            return jwt.Subject
+                ?? jwt.Claims.FirstOrDefault(c => c.Type == "sub")?.Value
+                ?? jwt.Claims.FirstOrDefault(c => c.Type == "oid")?.Value;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task InitMcpSession()

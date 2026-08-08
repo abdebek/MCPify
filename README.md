@@ -594,12 +594,11 @@ Per-tool scope enforcement is handled by `SessionAwareToolDecorator` via `ScopeR
 
 MCP C# SDK 2.x runs Streamable HTTP **stateless by default** (no `Mcp-Session-Id`, any instance can handle any request). That is the recommended path for multi-instance hosts.
 
-When `McpServer.SessionId` is null, MCPify resolves an **app-level** session handle in this order:
+When `McpServer.SessionId` is null, MCPify resolves an **app-level** session handle as follows:
 
-1. Tool argument `sessionId` (if present)
-2. `McpifyOptions.SessionIdResolver(HttpContext)`
-3. `HttpContext.Items["McpSessionId"]`
-4. Stdio default-session bridge (Stdio only)
+**HTTP (fail-closed):** `SessionIdResolver` → `HttpContext.Items["McpSessionId"]` → authenticated principal (`sub` / `oid`) → transport session (stateful fallback). A tool argument `sessionId` is accepted only if it **matches** that host-bound handle; otherwise it is ignored or rejected. Free-form client ids cannot select another user's ServerManaged token bucket.
+
+**Stdio:** transport → tool `sessionId` → default-session bridge (single-user DX).
 
 ```csharp
 builder.Services.AddMcpify(options =>
@@ -607,7 +606,7 @@ builder.Services.AddMcpify(options =>
     // Optional: opt into transport sessions only if you truly need them
     // options.HttpStateless = false;
 
-    // Preferred for ServerManaged tokens under stateless HTTP:
+    // Required for ServerManaged tokens under multi-user HTTP:
     options.SessionIdResolver = ctx =>
         ctx.User.FindFirst("sub")?.Value;
 });

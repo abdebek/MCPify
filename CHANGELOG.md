@@ -15,12 +15,14 @@ This project follows [Semantic Versioning](https://semver.org/) with a `*-previe
 - **`McpifyOptions.HttpStateless`** — optional override for SDK stateless mode. Set `false` only when you need transport-level sessions (`McpServer.SessionId`, legacy session affinity).
 - **`McpifyOptions.ConfigureHttpTransport`** — hook for idle timeout, event stores, and other `HttpServerTransportOptions`.
 - **`SessionIdResolver` is now wired** in `SessionAwareToolDecorator` (was documented but unused). Under stateless HTTP, resolve an app-level session handle from `HttpContext` (or `HttpContext.Items["McpSessionId"]`) so server-managed token storage still works without `Mcp-Session-Id`.
+- **HTTP fail-closed session handles** — free-form tool `sessionId` is ignored without a host-bound identity and **rejected** on mismatch with resolver/principal/`sub`. Login on HTTP without a host-bound handle fails instead of falling back to `"default"`.
 
 ### Migration notes
 
 1. No action required for most hosts: existing `WithHttpTransport()` behavior already followed the SDK default (stateless).
-2. If your host depended on a non-null `McpServer.SessionId` for multi-turn ServerManaged OAuth, either set `HttpStateless = false` or supply a stable handle via `SessionIdResolver` / tool argument `sessionId`.
-3. Prefer `UpstreamAuth.PassThrough()` on multi-user HTTP hosts; keep ServerManaged + encrypted token store for Stdio / single-user.
+2. If your host depended on a non-null `McpServer.SessionId` for multi-turn ServerManaged OAuth, either set `HttpStateless = false` or supply a stable handle via `SessionIdResolver` / authenticated principal.
+3. **Breaking for multi-user HTTP + ServerManaged:** tool argument `sessionId` alone no longer selects the token-store bucket. Bind via `SessionIdResolver` (e.g. JWT `sub`) or use `UpstreamAuth.PassThrough()`.
+4. Prefer `UpstreamAuth.PassThrough()` on multi-user HTTP hosts; keep ServerManaged + encrypted token store for Stdio / single-user.
 
 ## [0.0.15-preview] — 2026-08-01
 

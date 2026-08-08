@@ -40,11 +40,28 @@ public class SessionAwareToolDecoratorTests
         httpContextAccessor.HttpContext = new DefaultHttpContext();
         var secondResult = await decorator.InvokeAsync(CreateContext(provider, "session-two"), CancellationToken.None);
 
-        // Assert
-        Assert.Equal("session-one|Bearer token-one", ReadText(firstResult));
-        Assert.Equal("session-two|(null)", ReadText(secondResult));
+        // Assert — free-form sessionId is ignored on non-Stdio when no host-bound handle exists.
+        Assert.Equal("(null)|Bearer token-one", ReadText(firstResult));
+        Assert.Equal("(null)|(null)", ReadText(secondResult));
         Assert.Null(accessor.SessionId);
         Assert.Null(accessor.AccessToken);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AllowsClientSessionId_OnStdio()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+        services.AddSingleton(new McpifyOptions { Transport = McpTransportType.Stdio });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "stdio-session"), CancellationToken.None);
+
+        Assert.Equal("stdio-session|(null)", ReadText(result));
     }
 
     [Fact]
@@ -117,7 +134,7 @@ public class SessionAwareToolDecoratorTests
     }
 
     [Fact]
-    public async Task InvokeAsync_PrefersArgumentSessionId_OverResolver()
+    public async Task InvokeAsync_RejectsClientSessionId_WhenItMismatchesTrustedHandle()
     {
         var services = new ServiceCollection();
         var accessor = new McpContextAccessor();
@@ -134,9 +151,76 @@ public class SessionAwareToolDecoratorTests
         var provider = services.BuildServiceProvider();
         var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
 
-        var result = await decorator.InvokeAsync(CreateContext(provider, "from-arg"), CancellationToken.None);
+        var result = await decorator.InvokeAsync(CreateContext(provider, "attacker-session"), CancellationToken.None);
 
-        Assert.Equal("from-arg|(null)", ReadText(result));
+        Assert.True(result.IsError == true);
+        Assert.Contains("does not match", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_AcceptsClientSessionId_WhenItMatchesTrustedHandle()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContextAccessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(httpContextAccessor);
+        services.AddSingleton(new McpifyOptions
+        {
+            Transport = McpTransportType.Http,
+            SessionIdResolver = _ => "bound-session"
+        });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "bound-session"), CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+        Assert.Equal("bound-session|(null)", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_IgnoresClientSessionId_WhenNoTrustedHandle_OnHttp()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = new DefaultHttpContext() });
+        services.AddSingleton(new McpifyOptions { Transport = McpTransportType.Http });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, "guessable-session"), CancellationToken.None);
+
+        Assert.True(result.IsError != true);
+        Assert.Equal("(null)|(null)", ReadText(result));
+    }
+
+    [Fact]
+    public async Task InvokeAsync_UsesAuthenticatedPrincipalSubject_AsTrustedHandle()
+    {
+        var services = new ServiceCollection();
+        var accessor = new McpContextAccessor();
+        var httpContext = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                new[] { new Claim("sub", "user-42") },
+                authenticationType: "test"))
+        };
+
+        services.AddSingleton<IMcpContextAccessor>(accessor);
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = httpContext });
+        services.AddSingleton(new McpifyOptions { Transport = McpTransportType.Http });
+
+        var provider = services.BuildServiceProvider();
+        var decorator = new SessionAwareToolDecorator(new ContextProbeTool(accessor), provider);
+
+        var result = await decorator.InvokeAsync(CreateContext(provider, null), CancellationToken.None);
+
+        Assert.Equal("user-42|(null)", ReadText(result));
     }
 
     [Fact]

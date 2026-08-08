@@ -140,6 +140,26 @@ new OAuthAuthorizationCodeAuthentication(
 - Pass-through to multiple hosts is always blocked — no opt-in
 - At startup, MCPify **logs a warning** when two or more `ExternalApiOptions` with **different hosts** use PassThrough (including inside `Fallback`)
 
+### HTTP session handles (fail-closed)
+
+On **HTTP**, free-form tool argument `sessionId` is **not** a capability token. Token-store identity is host-bound only:
+
+| Source | Trusted on HTTP? | Order |
+|--------|------------------|-------|
+| `McpifyOptions.SessionIdResolver` | Yes (host code) | 1 |
+| `HttpContext.Items["McpSessionId"]` | Yes (host middleware) | 2 |
+| Authenticated principal (`sub` / `oid` / nameidentifier) | Yes | 3 |
+| Transport `McpServer.SessionId` (stateful opt-in) | Yes (server-issued fallback) | 4 |
+| Tool argument `sessionId` alone | **No** — ignored if no trusted handle; **rejected** if it mismatches a trusted handle | — |
+| `Constants.DefaultSessionId` for login | **No** on HTTP — login fails without a host-bound handle | — |
+
+**Stdio** keeps client/default session DX for single-user desktop hosts.
+
+Recommended multi-user HTTP:
+
+1. Prefer `UpstreamAuth.PassThrough()` + host JWT validation (no server-side token store).
+2. If ServerManaged is required: `SessionIdResolver = ctx => ctx.User.FindFirst("sub")?.Value` (or equivalent) so store keys cannot be chosen by the model/client.
+
 ### `allowDefaultSessionFallback`
 
 When enabled, the OAuth provider dual-writes tokens to both the real session and `Constants.DefaultSessionId`. The dual-write uses the same `providerName`, so cross-provider isolation is preserved — but **cross-session** isolation is weakened. Only use on single-user Stdio hosts.
@@ -149,6 +169,7 @@ When enabled, the OAuth provider dual-writes tokens to both the real session and
 - [ ] Different IdPs use different `clientId`s **or** explicit unique `providerName`s
 - [ ] Each `ExternalApiOptions.UpstreamAuth` points to the correct provider factory
 - [ ] `allowDefaultSessionFallback` is `false` on multi-user HTTP hosts
+- [ ] HTTP ServerManaged uses `SessionIdResolver` / principal subject — not free-form `sessionId` args
 - [ ] `PassThrough` is not used for APIs with different audiences (watch startup multi-host warning)
 - [ ] Each `TokenExchange` config has a distinct `ProviderName`
 

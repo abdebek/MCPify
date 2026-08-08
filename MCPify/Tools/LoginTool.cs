@@ -5,6 +5,7 @@ using MCPify.Core.Auth;
 using MCPify.Core.Auth.DeviceCode;
 using MCPify.Core.Auth.OAuth;
 using MCPify.Core.Session;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -25,7 +26,8 @@ public class LoginTool : McpServerTool
         Name = "login_auth_code_pkce",
         Description = "Initiates login for upstream APIs. Supports authorization-code + PKCE (browser or manual URL via LoginBrowserBehavior) " +
                       "or device-code flow when McpifyOptions.LoginFlow is DeviceCode (requires DeviceCodeAuthentication registered). " +
-                      "Headless/remote hosts should set LoginBrowserBehavior=Never or LoginFlow=DeviceCode.",
+                      "Headless/remote hosts should set LoginBrowserBehavior=Never or LoginFlow=DeviceCode. " +
+                      "On HTTP, session handles come from SessionIdResolver / authenticated principal — not free-form sessionId arguments.",
         InputSchema = JsonDocument.Parse("""{ "type": "object", "properties": { "sessionId": { "type": "string" } } }""").RootElement
     };
 
@@ -33,42 +35,52 @@ public class LoginTool : McpServerTool
 
     public override async ValueTask<CallToolResult> InvokeAsync(RequestContext<CallToolRequestParams> context, CancellationToken token)
     {
-        var logger = context.Services != null ? context.Services.GetService<Microsoft.Extensions.Logging.ILogger<LoginTool>>() : null;
-        var accessor = context.Services?.GetService<IMcpContextAccessor>();
+        var services = context.Services!;
+        var logger = services.GetService<ILogger<LoginTool>>();
+        var accessor = services.GetService<IMcpContextAccessor>();
+        var options = services.GetService<McpifyOptions>() ?? new McpifyOptions();
+        var sessionMap = services.GetService<ISessionMap>();
+        var httpContext = services.GetService<IHttpContextAccessor>()?.HttpContext;
 
-        string? sessionId = context.Server?.SessionId;
+        // Prefer the handle already established by SessionAwareToolDecorator; re-resolve for safety
+        // so LoginTool cannot be invoked without the decorator and adopt a free-form client sessionId.
+        var resolved = SessionHandleResolver.Resolve(
+            options,
+            context.Server?.SessionId,
+            context.Params?.Arguments,
+            httpContext,
+            sessionMap);
 
-        // 1. Try to get from arguments for backwards compatibility
-        if (string.IsNullOrEmpty(sessionId) &&
-            context.Params?.Arguments != null &&
-            context.Params.Arguments.TryGetValue("sessionId", out var sessionElement) &&
-            sessionElement.ValueKind == JsonValueKind.String &&
-            !string.IsNullOrEmpty(sessionElement.GetString()))
+        if (resolved.Error != null)
         {
-            sessionId = sessionElement.GetString();
+            return Error($"Forbidden: {resolved.Error}");
         }
 
-        // 2. Try to get from Context Accessor
-        if (string.IsNullOrEmpty(sessionId) && accessor != null)
-        {
-            sessionId = accessor.SessionId;
-        }
+        var sessionId = resolved.SessionId;
 
-        // 3. Backend fallback: use a stable default session if none exists
         if (string.IsNullOrEmpty(sessionId))
         {
-            sessionId = Constants.DefaultSessionId;
-            if (accessor != null)
+            if (options.Transport == McpTransportType.Http)
             {
-                accessor.SessionId = sessionId;
+                return Error(
+                    "No host-bound session handle for login on HTTP. " +
+                    "Configure McpifyOptions.SessionIdResolver (e.g. from JWT sub) or authenticate the MCP request. " +
+                    "Free-form sessionId tool arguments are not accepted on HTTP for ServerManaged token storage. " +
+                    "Prefer UpstreamAuth.PassThrough() for multi-user HTTP hosts.");
             }
+
+            // Stdio / single-user: stable default bucket.
+            sessionId = Constants.DefaultSessionId;
+        }
+
+        if (accessor != null)
+        {
+            accessor.SessionId = sessionId;
         }
 
         logger?.LogInformation("Initiating login for session {SessionId}", sessionId);
 
-        var tokenStore = context.Services!.GetRequiredService<ISecureTokenStore>();
-        var sessionMap = context.Services!.GetService<ISessionMap>();
-        var options = context.Services!.GetService<McpifyOptions>() ?? new McpifyOptions();
+        var tokenStore = services.GetRequiredService<ISecureTokenStore>();
 
         if (sessionMap != null)
         {
@@ -77,10 +89,10 @@ public class LoginTool : McpServerTool
 
         if (options.LoginFlow == LoginFlow.DeviceCode)
         {
-            return await RunDeviceCodeLoginAsync(context.Services!, sessionId, options, logger, token);
+            return await RunDeviceCodeLoginAsync(services, sessionId, options, logger, token);
         }
 
-        return await RunAuthorizationCodeLoginAsync(context.Services!, sessionId, options, tokenStore, logger, token);
+        return await RunAuthorizationCodeLoginAsync(services, sessionId, options, tokenStore, logger, token);
     }
 
     private async ValueTask<CallToolResult> RunDeviceCodeLoginAsync(
